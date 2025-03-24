@@ -15,7 +15,7 @@ Use the aliases below to quickly run common admin tasks via `irm | iex` in Power
 
 ---
 
-## 🧪 Usage Examples
+## Usage Examples
 
 ```powershell
 # Speedtest CLI
