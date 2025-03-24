@@ -1,9 +1,27 @@
-# Default User Group (Change if required)
-$DEFAULT_USERGROUP = "Everyone"
+<#
+.SYNOPSIS
+    Adds or removes firewall rules and folder permissions for Reckon Accounts (2013–2024).
 
-# Define Reckon Versions (Correct Ports from Official Documentation)
+.DESCRIPTION
+    Allows you to select a Reckon Accounts version, then add or remove:
+    - Windows Firewall rules for executables and ports
+    - Full control permissions on the company file folder for the correct QBDataServiceUser
+
+.EXAMPLE
+    .\Configure-ReckonFirewall.ps1
+
+.NOTES
+    Author: Raymond Slater
+    Requires: Admin rights
+#>
+
+
+# Define all supported Reckon versions with their respective:
+# - Listening port
+# - Program folder name
+# - QuickBooks service user (used for folder permissions)
 $versions = @{
-    "2013" = @{ Year = "2013"; Port = "10176"; Folder = "ReckonAccounts 2013"; DataUser = "QBDataServiceUser22" }
+    "2013" = @{ Year = "2013"; Port = "10176"; Folder = "Reckon Accounts 2013"; DataUser = "QBDataServiceUser22" }
     "2014" = @{ Year = "2014"; Port = "10177"; Folder = "Reckon Accounts 2014"; DataUser = "QBDataServiceUser23" }
     "2015" = @{ Year = "2015"; Port = "10178"; Folder = "Reckon Accounts 2015"; DataUser = "QBDataServiceUser24" }
     "2016" = @{ Year = "2016"; Port = "10179"; Folder = "Reckon Accounts 2016"; DataUser = "QBDataServiceUser25" }
@@ -17,109 +35,132 @@ $versions = @{
     "2024" = @{ Year = "2024"; Port = "10187"; Folder = "Reckon Accounts 2024"; DataUser = "QBDataServiceUser33" }
 }
 
-# Function to Show Available Versions
+# Display a menu of supported versions
 function Show-Menu {
-    Write-Host "`n*** Reckon Accounts Installation - Firewall & Permissions ***`n"
-    foreach ($year in ($versions.Keys | Sort-Object)) {
-        Write-Host "$year - Reckon Accounts $year"
+    Write-Host "`n*** Reckon Accounts Firewall & Folder Permissions Utility ***`n"
+    $versions.Keys | Sort-Object | ForEach-Object {
+        Write-Host "$_ - Reckon Accounts $_"
     }
     Write-Host ""
 }
 
-# Function to Get User Choice
+# Prompt the user to select a version year
 function Get-UserChoice {
     do {
         $choice = Read-Host "Enter the 4-digit year for the Reckon Accounts version you want to configure"
-    } while (-not $versions.ContainsKey($choice))
+    } while (-not $versions.ContainsKey($choice))  # Keep asking until a valid year is entered
     return $choice
 }
 
-# Function to Add Firewall Rule
+# Add a firewall rule for either a program path or a port (or both)
 function Add-FirewallRule {
-    param ([string]$name, [string]$program, [string]$port = $null)
+    param (
+        [string]$name,
+        [string]$program = $null,
+        [string]$port = $null
+    )
+
     if ($program) {
-        Write-Host "Adding $name"
+        Write-Host "Adding firewall rule: $name"
         netsh advfirewall firewall add rule name="$name" program="$program" action=allow enable=yes dir=in profile=any
     }
+
     if ($port) {
-        Write-Host "Adding $name - Port:$port"
+        Write-Host "Adding port rule: $name - Port $port"
         netsh advfirewall firewall add rule name="$name - Port" dir=in action=allow protocol=TCP localport=$port enable=yes
     }
 }
 
-# Function to Set Folder Permissions
+# Grant folder access permissions to a specific user
 function Set-FolderPermissions {
-    param ([string]$folder, [string]$user)
+    param (
+        [string]$folder,
+        [string]$user
+    )
+
     if (Test-Path $folder) {
         Write-Host "Granting Full Control to $user on $folder"
-        icacls $folder /grant "${user}:(OI)(CI)F" /T /C
+        icacls $folder /grant "${user}:(OI)(CI)F" /T /C  # OI/CI = object/container inherit
     } else {
-        Write-Host "❌ ERROR: Folder $folder does not exist. Skipping permissions."
+        Write-Host "`n❌ ERROR: Folder $folder does not exist. Skipping permissions." -ForegroundColor Red
     }
 }
 
-# Function to Prompt for Company File Location
+# Prompt for the Reckon company file folder path and validate it
 function Get-CompanyFileLocation {
     do {
-        $companyFilePath = Read-Host "Enter the full path to your Reckon Accounts company file folder (e.g., C:\ReckonData)"
-        if (-not (Test-Path $companyFilePath)) {
-            Write-Host "❌ ERROR: Folder does not exist. Please enter a valid path."
+        $path = Read-Host "Enter the full path to your Reckon Accounts company file folder (e.g., C:\ReckonData)"
+        if (-not (Test-Path $path)) {
+            Write-Host "`n❌ ERROR: Folder does not exist. Please enter a valid path." -ForegroundColor Red
         }
-    } while (-not (Test-Path $companyFilePath))
-    return $companyFilePath
+    } while (-not (Test-Path $path))  # Loop until a valid path is entered
+    return $path
 }
 
-# Main Function
+# Main script logic
 function Main {
     cls
-    Show-Menu
+    Show-Menu  # Display version options
     $selectedYear = Get-UserChoice
     $selectedVersion = $versions[$selectedYear]
 
+    # Determine install path based on OS architecture
     $installPath = if ([Environment]::Is64BitOperatingSystem) {
         "${env:ProgramFiles(x86)}\Intuit\$($selectedVersion.Folder)"
     } else {
         "${env:ProgramFiles}\Intuit\$($selectedVersion.Folder)"
     }
 
+    # Common files location used across versions
     $commonPath = "${env:ProgramFiles(x86)}\Common Files\Intuit\QuickBooks"
 
-    # Prompt user for Company File Location
+    # Ask for the folder where the Reckon company file(s) are stored
     $companyFileLocation = Get-CompanyFileLocation
 
+    # Prompt for action
     Write-Host "`n1. Add $selectedYear Exceptions"
     Write-Host "2. Delete $selectedYear Exceptions`n"
-    $actionChoice = Read-Host "Select an Action (1=Add, 2=Delete)"
+    $actionChoice = Read-Host "Select an Action (1 = Add, 2 = Delete)"
 
     switch ($actionChoice) {
         "1" {
             Write-Host "`n*** Adding Firewall Exceptions ***`n"
+
+            # Add per-executable rules
             Add-FirewallRule -name "Reckon Accounts $selectedYear - FileManagement" -program "$installPath\FileManagement.exe"
             Add-FirewallRule -name "Reckon Accounts $selectedYear - QBDBMgr" -program "$installPath\QBDBMgr.exe"
             Add-FirewallRule -name "Reckon Accounts $selectedYear - QBDBMgrN" -program "$installPath\QBDBMgrN.exe"
             Add-FirewallRule -name "Reckon Accounts $selectedYear - QBGDSPlugin" -program "$installPath\QBGDSPlugin.exe"
             Add-FirewallRule -name "Reckon Accounts $selectedYear - QBW32" -program "$installPath\QBW32.exe"
+
+            # Add shared/common executables
             Add-FirewallRule -name "Reckon Common - QBCFMonitorService" -program "$commonPath\QBCFMonitorService.exe"
             Add-FirewallRule -name "Reckon Common - QBUpdate" -program "$commonPath\QBUpdate.exe"
+
+            # Add port rule
             Add-FirewallRule -name "Reckon Accounts $selectedYear - Port" -port $selectedVersion.Port
-            
-            # Set full permissions for QBDataServiceUserXX
-            Set-FolderPermissions -folder "$companyFileLocation" -user "$($selectedVersion.DataUser)"
+
+            # Set folder permissions for the correct QB service user
+            Set-FolderPermissions -folder $companyFileLocation -user $selectedVersion.DataUser
             break
         }
+
         "2" {
             Write-Host "`n*** Removing Firewall Exceptions ***`n"
+
+            # Remove only specific rule names — adjust as needed
             netsh advfirewall firewall delete rule name="Reckon Accounts $selectedYear - FileManagement"
             netsh advfirewall firewall delete rule name="Reckon Accounts $selectedYear - QBDBMgr"
             netsh advfirewall firewall delete rule name="Reckon Accounts $selectedYear - QBDBMgrN"
             netsh advfirewall firewall delete rule name="Reckon Accounts $selectedYear - Port"
             break
         }
+
         default {
-            Write-Host "Invalid action. Exiting..."
+            Write-Host "Invalid action. Exiting..." -ForegroundColor Yellow
         }
     }
 }
 
-# Run the Main Function
+# Entry point
 Main

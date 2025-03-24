@@ -10,10 +10,6 @@
 .PARAMETER ParameterName
     Description of a parameter (repeat this for each parameter).
 
-.EXAMPLE
-    Example usage of the script:
-    PS> .\MyScript.ps1 -Param1 "Value"
-
 .NOTES
     Additional notes, author name, version, etc.
 
