@@ -29,3 +29,6 @@ irm https://ps.cqts.com.au/reckonfw | iex
 
 # Check OneDrive sync health
 irm https://ps.cqts.com.au/ods | iex
+
+# Test SMTP Authentication
+irm https://ps.cqts.com.au/Test-SMTPAuthentication.ps1 -SmtpServer "smtp.office365.com" -SmtpPort 587 -Encryption STARTTLS -Username "user@domain.com" -Password "MyAppPassword"
