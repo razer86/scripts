@@ -73,12 +73,16 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-## 🔍 Debug a single org
+### 🔍 Debugging Options
 
-Set this line in `ITGlueFolders.py`:
-```
-   DEBUG_ORG_ID = 6526607
-```
+- **Single Organization Debug**
+
+   Set `DEBUG_ORG_ID = <OrgID>` in `ITGlueFolders.py` to process a specific organization.
+
+- **Multiple Organizations Debug**
+
+   Set `DEBUG_ORG_COUNT = <number>` in `ITGlueFolders.py` to process the first X unprocessed organizations.
+
 
 Then run:
 ```
