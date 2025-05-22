@@ -25,7 +25,7 @@ This project extracts password entries and their associated folder structure fro
 ---
 
 ## 📁 Project Structure
-
+```
 .
 ├── ITGlueFolders.py         # Main script: extracts passwords and folder info
 ├── folder_resolver.py       # Uses Selenium to scrape folder names from UI
@@ -35,7 +35,7 @@ This project extracts password entries and their associated folder structure fro
 ├── folder_cache.json        # Caches folder names (auto-generated)
 ├── itglue_passwords.csv     # CSV export of password data
 ├── itglue_passwords.json    # JSON export of same
-
+```
 ---
 
 ## 🔐 Environment Configuration
