@@ -1,1 +1,25 @@
-**/.env
+# === Environment and credentials ===
+.env
+
+# === Output files ===
+*.csv
+*.json
+
+# === Cache files ===
+folder_cache.json
+org_cache.json
+
+# === Python cache and artifacts ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# === VS Code settings (optional) ===
+.vscode/
+
+# === Logs ===
+*.log
+
+# === Selenium downloads (optional) ===
+chromedriver*
