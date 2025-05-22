@@ -30,7 +30,6 @@ This project extracts password entries and their associated folder structure fro
 ├── ITGlueFolders.py         # Main script: extracts passwords and folder info
 ├── folder_resolver.py       # Uses Selenium to scrape folder names from UI
 ├── .env_example             # Template environment file
-├── .gitignore               # Excludes secrets, caches, and output files
 ├── org_cache.json           # Tracks processed orgs (auto-generated)
 ├── folder_cache.json        # Caches folder names (auto-generated)
 ├── itglue_passwords.csv     # CSV export of password data
@@ -41,29 +40,32 @@ This project extracts password entries and their associated folder structure fro
 ## 🔐 Environment Configuration
 
 1. Copy `.env_example` to `.env`:
-
+```
    cp .env_example .env
-
+```
 2. Fill in your credentials:
-
+```
    ITGLUE_API_BASE=https://api.itglue.com  
    ITGLUE_UI_BASE=https://yourcompany.itglue.com  
    ITGLUE_API_KEY=your-api-key  
    ITGLUE_USERNAME=your@email.com  
    ITGLUE_PASSWORD=your-password  
    ITGLUE_TOTP_SECRET=your-otp-secret  # Base32 TOTP (e.g., from Authy or 1Password)
+```
 
 ---
 
 ## 🚀 Usage
 
 ### Install dependencies
-
+```
    pip install -r requirements.txt
+```
 
 ### Run the full audit
-
+```
    python ITGlueFolders.py
+```
 
 - Fetches all organizations
 - Continues from last saved state (cached orgs and folders)
@@ -74,12 +76,14 @@ This project extracts password entries and their associated folder structure fro
 ## 🔍 Debug a single org
 
 Set this line in `ITGlueFolders.py`:
-
+```
    DEBUG_ORG_ID = 6526607
+```
 
 Then run:
-
+```
    python ITGlueFolders.py
+```
 
 ---
 
@@ -94,8 +98,9 @@ Then run:
 ## 🧼 Resetting the State
 
 To start from scratch:
-
+```
    rm org_cache.json folder_cache.json itglue_passwords.*
+```
 
 ---
 
