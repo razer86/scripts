@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 from folder_resolver import FolderResolver
 
 # === Configuration ===
-DEBUG_ORG_ID = 6526607  # Set to None to process all organizations
+DEBUG_ORG_ID = None  # Set to None to process all organizations
+DEBUG_ORG_COUNT = 5  # Limit full run to first X orgs (set to None to disable)
 ORG_CACHE_FILE = "org_cache.json"
 
 # === Load environment variables from .env file ===
@@ -180,6 +181,13 @@ def main():
 
     # === FULL RUN: process all unprocessed orgs ===
     org_cache = get_all_organizations()
+
+    # If DEBUG_ORG_COUNT is set, slice the orgs to only include the first X unprocessed
+    if DEBUG_ORG_COUNT is not None:
+        print(f"[~] DEBUG_ORG_COUNT active: limiting to first {DEBUG_ORG_COUNT} unprocessed orgs")
+        unprocessed_items = [(org_id, org_info) for org_id, org_info in org_cache.items() if not org_info.get("Processed")]
+        org_cache = dict(unprocessed_items[:DEBUG_ORG_COUNT])
+
     total = len(org_cache)
     completed = sum(1 for o in org_cache.values() if o.get("Processed"))
     print(f"[*] Starting audit for {total} organizations ({completed} already completed)")

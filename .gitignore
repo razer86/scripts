@@ -23,3 +23,6 @@ __pycache__/
 
 # === Selenium downloads (optional) ===
 chromedriver*
+
+# === GitGuardian Cache ===
+*.cache_ggshield
