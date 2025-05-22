@@ -1,34 +1,29 @@
-# PowerShell Script Shortcuts
+# Scripts by Raymond Slater
 
-Use the aliases below to quickly run common admin tasks via `irm | iex` in PowerShell.
-
----
-
-## Quick Aliases
-
-| Alias       | Script                         | Description                                                |
-|-------------|--------------------------------|------------------------------------------------------------|
-| `/speedtest` | `Run-Speedtest.ps1`           | Run and auto-update the latest Ookla Speedtest CLI.       |
-| `/addwifi`   | `Add-WirelessNetwork.ps1`     | Add a Wi-Fi profile using SSID and password.              |
-| `/reckonfw`  | `Configure-ReckonFirewall.ps1`| Add/remove firewall rules for Reckon Accounts.            |
-| `/ods`       | `Check-OneDriveSyncHealth.ps1`| Check synced OneDrive file count and flag if over 280k.   |
+This repository contains a collection of automation and integration scripts, grouped by purpose and platform.
 
 ---
 
-## Usage Examples
+## 📁 Powershell Scripts
 
-```powershell
-# Speedtest CLI
-irm https://ps.cqts.com.au/speedtest | iex
+General Powershell SCripts.
 
-# Add a wireless profile
-irm https://ps.cqts.com.au/addwifi | iex -- "MySSID" "MySecretPassword"
+➡️ See [`Powershell/README.md`](Powershell/README.md) for usage and details.
 
-# Configure firewall rules for Reckon Accounts
-irm https://ps.cqts.com.au/reckonfw | iex
+---
 
-# Check OneDrive sync health
-irm https://ps.cqts.com.au/ods | iex
+## 📁 ITGlue API Tools
 
-# Test SMTP Authentication
-irm https://ps.cqts.com.au/Test-SMTPAuthentication.ps1 -SmtpServer "smtp.office365.com" -SmtpPort 587 -Encryption STARTTLS -Username "user@domain.com" -Password "MyAppPassword"
+Python-based tools for auditing and extracting data from ITGlue, including:
+
+- Full password + folder extractor using Selenium
+- Support for resume-safe execution and rate-limit handling
+
+➡️ See [`ITGlue_api/README.md`](ITGlue_api/README.md) for setup and instructions.
+
+---
+
+## 📁 General Scripts
+
+Miscellaneous scripts and tools.
+
