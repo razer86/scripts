@@ -6,7 +6,7 @@ This repository contains a collection of automation and integration scripts, gro
 
 ## 📁 Powershell Scripts
 
-General Powershell SCripts.
+General Powershell Scripts.
 
 ➡️ See [`Powershell/README.md`](Powershell/README.md) for usage and details.
 
