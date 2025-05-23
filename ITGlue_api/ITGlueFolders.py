@@ -9,7 +9,7 @@ from folder_resolver import FolderResolver
 
 # === Configuration ===
 DEBUG_ORG_ID = None  # Set to None to process all organizations
-DEBUG_ORG_COUNT = 5  # Limit full run to first X orgs (set to None to disable)
+DEBUG_ORG_COUNT = 1  # Limit full run to first X orgs (set to None to disable)
 ORG_CACHE_FILE = "org_cache.json"
 
 # === Load environment variables from .env file ===
@@ -101,8 +101,25 @@ def process_org_passwords(org_id, org_name, resolver):
     password_data = []
 
     # Get all password relationships for the org
-    pw_ids_resp = safe_get(f"{API_BASE}/organizations/{org_id}/relationships/passwords", headers=HEADERS)
-    pw_ids = pw_ids_resp.json().get("data", [])
+    pw_ids = []
+    page = 1
+
+    while True:
+        print(f"    - Fetching password page {page}")
+        pw_page_resp = safe_get(
+            f"{API_BASE}/organizations/{org_id}/relationships/passwords?page[number]={page}&page[size]=100",
+            headers=HEADERS
+        )
+
+        data = pw_page_resp.json().get("data", [])
+        pw_ids.extend(data)
+
+        links = pw_page_resp.json().get("links", {})
+        if not links.get("next"):
+            break
+
+        page += 1
+
     print(f"    - Found {len(pw_ids)} passwords")
 
     for pw in pw_ids:
