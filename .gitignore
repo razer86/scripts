@@ -26,3 +26,7 @@ chromedriver*
 
 # === GitGuardian Cache ===
 *.cache_ggshield
+
+
+# === Powershell Credentials
+*\config.ps1

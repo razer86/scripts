@@ -39,9 +39,9 @@ This project extracts password entries and their associated folder structure fro
 
 ## 🔐 Environment Configuration
 
-1. Copy `.env_example` to `.env`:
+1. Copy `.env.example` to `.env`:
 ```
-   cp .env_example .env
+   cp .env.example .env
 ```
 2. Fill in your credentials:
 ```
