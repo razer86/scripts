@@ -1,10 +1,38 @@
-# =========================================
-# ===   Create Azure App for Hudu     ===
-# =========================================
-# Author: Raymond Slater
-# Version: 1.0
-# Date: 2025-05-28
-# https://github.com/razer86/scripts
+<#
+.SYNOPSIS
+    Creates a Microsoft Entra ID (Azure AD) application for use with Hudu M365 integration.
+
+.DESCRIPTION
+    This script automates the creation of an Azure application registration for Hudu. It assigns the required Microsoft Graph
+    application permissions (Directory.Read.All, User.Read.All, Reports.Read.All), generates a client secret, and outputs the
+    necessary configuration details for use within Hudu.
+
+.PARAMETER AppName
+    The display name for the Azure application. Default is "Hudu M365 Integration".
+
+.PARAMETER SecretExpiryInMonths
+    The number of months the client secret will remain valid. Default is 12 months.
+
+.EXAMPLE
+    .\Create-HuduAzureApp.ps1
+
+    Creates the application with the default name and 12-month secret expiry.
+
+.EXAMPLE
+    .\Create-HuduAzureApp.ps1 -AppName "Contoso Hudu App" -SecretExpiryInMonths 24
+
+    Creates the application named "Contoso Hudu App" with a 24-month client secret.
+
+.NOTES
+    Author: Raymond Slater
+    Version: 1.1
+    License: MIT
+    Last Updated: 2025-05-28
+
+.LINK
+    https://support.hudu.com/hc/en-us/articles/11610345552407-Microsoft-Office-365
+    https://github.com/razer86/scripts
+#>
 
 param (
     [string]$AppName = "Hudu M365 Integration",
