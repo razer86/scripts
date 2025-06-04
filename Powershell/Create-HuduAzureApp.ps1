@@ -39,6 +39,9 @@ param (
     [int]$SecretExpiryInMonths = 12
 )
 
+# === Track start time for elapsed duration ===
+$scriptStart = Get-Date
+
 # === PowerShell version check ===
 $requiredPSVersion = [Version]"7.0"
 if ($PSVersionTable.PSVersion -lt $requiredPSVersion) {
@@ -113,6 +116,7 @@ try {
     ) -ContextScope Process
 } catch {
     Write-Status -Message "Failed to connect to Microsoft Graph: $_" -Type "error"
+    Disconnect-MgGraph
     exit 1
 }
 
@@ -131,6 +135,7 @@ try {
     )
 } catch {
     Write-Status -Message "Failed to create Azure application: $_" -Type "error"
+    Disconnect-MgGraph
     exit 1
 }
 
@@ -146,12 +151,14 @@ try {
     }
 } catch {
     Write-Status -Message "Failed to create client secret: $_" -Type "error"
+    Disconnect-MgGraph
     exit 1
 }
 
 
 if (-not $app.AppId -or -not $app.Id) {
     Write-Status -Message "Failed to retrieve Application ID: $_" -Type "error"
+    Disconnect-MgGraph
     exit 1
 }
 
@@ -167,3 +174,15 @@ Write-Host "Expires:         $($secret.EndDateTime)"
 
 Write-Status -Message "You must manually grant admin consent in the portal:"  -Type "warning"
 Write-Host "   https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($app.AppId)/isMSAApp~/false"
+
+# === Elapsed Time ===
+$elapsed = (Get-Date) - $scriptStart
+Write-Status -Message "Script completed in $($elapsed.TotalSeconds.ToString("0.0")) seconds." -Type "success"
+
+# === Disconnect from Microsoft Graph ===
+try {
+    Disconnect-MgGraph
+    Write-Status -Message "Disconnected from Microsoft Graph." -Type "info"
+} catch {
+    Write-Status -Message "Failed to disconnect from Microsoft Graph: $_" -Type "error"
+}
