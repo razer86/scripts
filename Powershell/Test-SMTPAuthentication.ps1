@@ -28,7 +28,7 @@
     .\Test-SMTPAuthentication.ps1 -SmtpServer "smtp.gmail.com" -SmtpPort 465 -Encryption SSL -Username "you@gmail.com" -Password "YourGmailAppPassword"
 
 .NOTES
-    Author: Raymond Slater / ChatGPT
+    Author: Raymond Slater
     Requires: Internet access + SMTP credentials
 #>
 
