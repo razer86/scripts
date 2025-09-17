@@ -1,0 +1,7 @@
+{
+  "Tenant": "tenant.onmicrosoft.com",
+  "AppId": "11111111-2222-3333-4444-555555555555",
+  "SiteUrl": "https://tenant.sharepoint.com,
+  "LibraryTitle": "Documents",
+  "ReportFolder": "C:\\Temp\\SPMT-Compare"
+}
