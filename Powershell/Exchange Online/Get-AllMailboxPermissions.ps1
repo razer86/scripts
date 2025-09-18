@@ -1,7 +1,4 @@
 <#
-# =========================================
-# ===   Generate User-Centric Mailbox Delegation Report   ===
-# =========================================
 .SYNOPSIS
     Generate a user-centric delegated permissions report for all Exchange Online mailboxes.
 
@@ -22,8 +19,7 @@
 
 .NOTES
     - Requires Exchange Online PowerShell module (Connect-ExchangeOnline).
-    - Excludes inherited entries and NT AUTHORITY\SELF.
-    - Leaves group vs user trustees as-is (string); optionally resolve to UPN if desired.
+
 #>
 
 # =========================================
