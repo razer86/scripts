@@ -11,23 +11,23 @@
     The display name for the Azure application. Default is "Hudu M365 Integration".
 
 .PARAMETER SecretExpiryInMonths
-    The number of months the client secret will remain valid. Default is 12 months.
+    The number of months the client secret will remain valid. Default is 24 months.
 
 .EXAMPLE
     .\Create-HuduAzureApp.ps1
 
-    Creates the application with the default name and 12-month secret expiry.
+    Creates the application with the default name and 24-month secret expiry.
 
 .EXAMPLE
-    .\Create-HuduAzureApp.ps1 -AppName "Contoso Hudu App" -SecretExpiryInMonths 24
+    .\Create-HuduAzureApp.ps1 -AppName "Contoso Hudu App" -SecretExpiryInMonths 12
 
-    Creates the application named "Contoso Hudu App" with a 24-month client secret.
+    Creates the application named "Contoso Hudu App" with a 12-month client secret.
 
 .NOTES
     Author: Raymond Slater
-    Version: 1.2
+    Version: 1.3
     License: MIT
-    Last Updated: 2025-06-04
+    Last Updated: 2025-11-20
 
 .LINK
     https://support.hudu.com/hc/en-us/articles/11610345552407-Microsoft-Office-365
@@ -36,13 +36,15 @@
 
 param (
     [string]$AppName = "Hudu M365 Integration",
-    [int]$SecretExpiryInMonths = 12
+    [int]$SecretExpiryInMonths = 24
 )
 
 # === Track start time for elapsed duration ===
 $scriptStart = Get-Date
 
 # === PowerShell version check ===
+# Reference: https://learn.microsoft.com/powershell/microsoftgraph/installation
+# The Graph modules specify PowerShellVersion = '7.0' in their module manifest.
 $requiredPSVersion = [Version]"7.0"
 if ($PSVersionTable.PSVersion -lt $requiredPSVersion) {
     Write-Error "This script requires PowerShell $requiredPSVersion or higher. Current: $($PSVersionTable.PSVersion)"
@@ -53,13 +55,13 @@ if ($PSVersionTable.PSVersion -lt $requiredPSVersion) {
 function Write-Status {
     param (
         [Parameter(Mandatory)][string]$Message,
-        [ValidateSet("info", "success", "error")][string]$Type = "info"
+        [ValidateSet("info", "success", "error", "warning")][string]$Type = "info"
     )
     $prefix = switch ($Type) {
-        "info"    { "🔄" }
-        "success" { "✅" }
-        "error"   { "❌" }
-        "warning" { "⚠️" }
+        "info"    { "[INFO]" }
+        "success" { "[SUCCESS]" }
+        "error"   { "[ERROR]" }
+        "warning" { "[WARNING]" }
     }
     $color = switch ($Type) {
         "info"    { "Cyan" }
@@ -107,18 +109,32 @@ try {
 # === Connect to Graph ===
 Write-Status -Message "Connecting to Microsoft Graph...(This can take a moment to load)" -Type "info"
 try {
-    Select-MgProfile -Name "v1.0"
+    # Select-MgProfile -Name "v1.0"
     Connect-MgGraph -Scopes @(
         "Application.ReadWrite.All",
         "AppRoleAssignment.ReadWrite.All",
         "Directory.AccessAsUser.All",
         "Policy.Read.All"
-    ) -ContextScope Process
+    ) -ContextScope Process -NoWelcome
 } catch {
     Write-Status -Message "Failed to connect to Microsoft Graph: $_" -Type "error"
     Disconnect-MgGraph
     exit 1
 }
+
+# === Record the Comany Name ===
+$companyName = "COMPANY NAME"
+
+try {
+    $org = Get-MgOrganization -ErrorAction Stop | Select-Object -First 1
+    if ($org.DisplayName) {
+        $companyName = $org.DisplayName
+    }
+}
+catch {
+    Write-Status "Could not retrieve tenant display name from Microsoft Graph. Using generic consent text." -Type "warning"
+}
+
 
 # === Create the app registration ===
 Write-Status -Message "Creating Azure application: $AppName..." -Type "info"
@@ -135,7 +151,7 @@ try {
     )
 } catch {
     Write-Status -Message "Failed to create Azure application: $_" -Type "error"
-    Disconnect-MgGraph
+    Disconnect-MgGraph | Out-Null
     exit 1
 }
 
@@ -151,14 +167,16 @@ try {
     }
 } catch {
     Write-Status -Message "Failed to create client secret: $_" -Type "error"
-    Disconnect-MgGraph
+    Disconnect-MgGraph | Out-Null
+
     exit 1
 }
 
 
 if (-not $app.AppId -or -not $app.Id) {
     Write-Status -Message "Failed to retrieve Application ID: $_" -Type "error"
-    Disconnect-MgGraph
+    Disconnect-MgGraph | Out-Null
+
     exit 1
 }
 
@@ -168,12 +186,29 @@ Write-Host "`n=== Application Details for Hudu ==="
 Write-Host "App Name:        $($app.DisplayName)"
 Write-Host "Application ID:  $($app.AppId)"
 Write-Host "Tenant ID:       $tenantId"
-Write-Host "Client Secret:   $($secret.SecretText)"
+Write-Host "Secret Key:      $($secret.SecretText)"
 Write-Host "Expires:         $($secret.EndDateTime)"
+Write-Host ""
 
 
-Write-Status -Message "You must manually grant admin consent in the portal:"  -Type "warning"
-Write-Host "   https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($app.AppId)/isMSAApp~/false"
+$portalUrl = "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($app.AppId)/isMSAApp~/false"
+
+Write-Status -Message "You must manually grant admin consent for this application." -Type "warning"
+Write-Host ""
+Write-Host "   A browser window will now open automatically." -ForegroundColor Yellow
+Write-Host "   In the Azure portal, click: 'Grant admin consent for $companyName'." -ForegroundColor Yellow
+Write-Host ""
+
+# Try to open automatically
+try {
+    Start-Process $portalUrl
+}
+catch {
+    Write-Status "Unable to open the browser automatically. Please use the link below:" -Type "error"
+    Write-Host "   $portalUrl" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 
 # === Elapsed Time ===
 $elapsed = (Get-Date) - $scriptStart
@@ -181,7 +216,8 @@ Write-Status -Message "Script completed in $($elapsed.TotalSeconds.ToString("0.0
 
 # === Disconnect from Microsoft Graph ===
 try {
-    Disconnect-MgGraph
+    Disconnect-MgGraph | Out-Null
+    
     Write-Status -Message "Disconnected from Microsoft Graph." -Type "info"
 } catch {
     Write-Status -Message "Failed to disconnect from Microsoft Graph: $_" -Type "error"
