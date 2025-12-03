@@ -11,17 +11,10 @@
 .EXAMPLE
     irm https://ps.cqts.com.au/speedtest.ps1 | iex
 
-    irm https://ps.cqts.com.au/speedtest.ps1 | iex -- --format json
-
 .NOTES
     Author: Raymond Slater
     URL: https://ps.cqts.com.au/speedtest.ps1
 #>
-
-param (
-    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
-    [string[]]$ScriptArgs
-)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -59,20 +52,14 @@ function Install-SpeedtestCLI {
     Write-Host "Speedtest CLI v$SpeedtestVersion installed to $installPath" -ForegroundColor Green
 }
 
-function Run-Speedtest {
-    if (-not ($ScriptArgs -contains "--accept-license")) {
-        $ScriptArgs += "--accept-license"
-    }
-    if (-not ($ScriptArgs -contains "--accept-gdpr")) {
-        $ScriptArgs += "--accept-gdpr"
-    }
-
-    & $exePath @ScriptArgs
+function Invoke-Speedtest {
+    & $exePath --accept-license --accept-gdpr
 }
 
-# Main logic
+# Check/Install Speedtest CLI
 if (-not (Test-Path $exePath)) {
     Install-SpeedtestCLI
 }
 
-Run-Speedtest
+# Run Speedtest
+Invoke-Speedtest
