@@ -75,23 +75,40 @@ function Write-Status {
 
 # === Required Graph modules ===
 $requiredModules = @(
+    "Microsoft.Graph.Authentication",
     "Microsoft.Graph.Applications",
     "Microsoft.Graph.Users",
-    "Microsoft.Graph.Authentication"
+    "Microsoft.Graph.Identity.DirectoryManagement"
 )
 
 Write-Status -Message "Checking for required Microsoft Graph modules." -Type "info"
+
+# 1. Install phase (order doesn't matter here)
 foreach ($mod in $requiredModules) {
     if (-not (Get-Module -ListAvailable -Name $mod)) {
         try {
             Write-Status -Message "Installing module: $mod" -Type "info"
-            Install-Module $mod -Scope CurrentUser -Force -ErrorAction Stop
+            Install-Module $mod -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
         } catch {
             Write-Status -Message "Failed to install module '$mod': $_" -Type "error"
             exit 1
         }
     }
+}
+
+# 2. Import phase — AUTH FIRST
+try {
+    Write-Status -Message "Importing module: Microsoft.Graph.Authentication" -Type "info"
+    Import-Module Microsoft.Graph.Authentication -Force -ErrorAction Stop
+} catch {
+    Write-Status -Message "Failed to import module 'Microsoft.Graph.Authentication': $_" -Type "error"
+    exit 1
+}
+
+# 3. Import remaining Graph modules
+foreach ($mod in $requiredModules | Where-Object { $_ -ne "Microsoft.Graph.Authentication" }) {
     try {
+        Write-Status -Message "Importing module: $mod" -Type "info"
         Import-Module $mod -Force -ErrorAction Stop
     } catch {
         Write-Status -Message "Failed to import module '$mod': $_" -Type "error"
@@ -194,7 +211,7 @@ Write-Host "Expires:         $($secret.EndDateTime)"
 Write-Host ""
 
 
-$portalUrl = "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($app.AppId)/isMSAApp~/false"
+$portalUrl = "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$($app.AppId)"
 
 Write-Status -Message "You must manually grant admin consent for this application." -Type "warning"
 Write-Host ""
