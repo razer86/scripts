@@ -31,6 +31,7 @@
 
 .LINK
     https://support.hudu.com/hc/en-us/articles/11610345552407-Microsoft-Office-365
+    https://support.hudu.com/hc/en-us/articles/31877317354391-Microsoft-Intune
     https://github.com/razer86/scripts
 #>
 
@@ -145,7 +146,9 @@ try {
             ResourceAccess = @(
                 @{ Id = "7ab1d382-f21e-4acd-a863-ba3e13f7da61"; Type = "Role" },   # Directory.Read.All
                 @{ Id = "230c1aed-a721-4c5d-9cb4-a90514e508ef"; Type = "Role" },   # Reports.Read.All
-                @{ Id = "df021288-bdef-4463-88db-98f22de89214"; Type = "Role" }    # User.Read.All
+                @{ Id = "df021288-bdef-4463-88db-98f22de89214"; Type = "Role" },   # User.Read.All
+                @{ Id = "7438b122-aefc-4978-80ed-43db9fcc7715"; Type = "Role" },   # Device.Read.All
+                @{ Id = "5b567255-7703-4780-807c-7be8301ae99b"; Type = "Role" }    # Group.Read.All
             )
         }
     )
