@@ -4,7 +4,7 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-## ✨ Features
+## Features
 
 - Retrieves all organizations via the ITGlue REST API
 - Queries all password entries for each organization
@@ -16,7 +16,7 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-## 📦 Requirements
+## Requirements
 
 - Python 3.10+
 - Google Chrome
@@ -24,7 +24,7 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 ```
 .
 ├── ITGlueFolders.py         # Main script: extracts passwords and folder info
@@ -37,7 +37,7 @@ This project extracts password entries and their associated folder structure fro
 ```
 ---
 
-## 🔐 Environment Configuration
+## Environment Configuration
 
 1. Copy `.env.example` to `.env`:
 ```
@@ -55,7 +55,7 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-## 🚀 Usage
+## Usage
 
 ### Install dependencies
 ```
@@ -73,7 +73,7 @@ This project extracts password entries and their associated folder structure fro
 
 ---
 
-### 🔍 Debugging Options
+### Debugging Options
 
 - **Single Organization Debug**
 
@@ -91,7 +91,7 @@ Then run:
 
 ---
 
-## 🛑 Rate Limit Handling
+## Rate Limit Handling
 
 - API rate limits (HTTP 429) are automatically detected
 - The script will wait and retry based on the `Retry-After` header
@@ -99,7 +99,7 @@ Then run:
 
 ---
 
-## 🧼 Resetting the State
+## Resetting the State
 
 To start from scratch:
 ```
@@ -108,7 +108,7 @@ To start from scratch:
 
 ---
 
-## ✅ Output Format
+## Output Format
 
 Each row in `itglue_passwords.csv` includes:
 
@@ -119,13 +119,13 @@ Each row in `itglue_passwords.csv` includes:
 
 ---
 
-## 📄 License
+## License
 
 MIT – free to use, modify, or distribute.
 
 ---
 
-## 👤 Author
+## Author
 
 Raymond Slater  
 https://github.com/razer86
