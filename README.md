@@ -21,13 +21,14 @@ Several scripts are available via web shortcuts at `ps.cqts.com.au`:
 
 ## Intune Management
 
-Microsoft Intune remediation scripts for automated detection and resolution of common issues.
+Scripts and tools for Microsoft Intune device management, configuration, and automation.
 
-See [`Intune/README.md`](Intune/README.md) for deployment instructions.
+See [`Intune/README.md`](Intune/README.md) for overview and deployment instructions.
 
-**Available Remediations:**
-- HP Bloatware Detection & Removal
-- OneDrive Timer AutoMount Configuration
+**Available Content:**
+- Proactive Remediations (HP Bloatware Removal, OneDrive Configuration)
+- Device configuration scripts
+- Compliance and reporting utilities
 
 ---
 
