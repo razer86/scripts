@@ -30,3 +30,6 @@ chromedriver*
 
 # === Powershell Credentials
 *\config.ps1
+
+# === Exclude testing scripts ===
+Test-*.ps1
