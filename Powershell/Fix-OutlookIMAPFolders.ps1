@@ -12,7 +12,7 @@ param (
     [switch]$ListOnly  # Use -ListOnly to prevent making changes
 )
 
-Function List-And-UpdateFolders {
+Function Update-OutlookFolders {
     param (
         $Folders,
         $Indent = ""
@@ -35,7 +35,7 @@ Function List-And-UpdateFolders {
             }
 
             # Recurse into subfolders
-            List-And-UpdateFolders -Folders $Folder.Folders -Indent ($Indent + "  ")
+            Update-OutlookFolders -Folders $Folder.Folders -Indent ($Indent + "  ")
         } catch {
             Write-Warning "Error processing folder: $($Folder.Name) - $_"
         }
@@ -56,4 +56,4 @@ try {
 }
 
 Write-Host "`nStarting scan from folder: $($oFolder.Name)`n" -ForegroundColor Cyan
-List-And-UpdateFolders -Folders $oFolder.Folders
+Update-OutlookFolders -Folders $oFolder.Folders

@@ -19,13 +19,15 @@
     The email address used for SMTP authentication and sending
 
 .PARAMETER Password
-    The plain text SMTP password or app password (converted securely)
+    The SMTP password or app password as a SecureString. If not provided, you will be prompted securely.
 
 .EXAMPLE
-    .\Test-SMTPAuthentication.ps1 -SmtpServer "smtp.office365.com" -SmtpPort 587 -Encryption STARTTLS -Username "user@domain.com" -Password "MyAppPassword"
+    $securePassword = Read-Host -AsSecureString -Prompt "Enter SMTP Password"
+    .\Test-SMTPAuthentication.ps1 -SmtpServer "smtp.office365.com" -SmtpPort 587 -Encryption STARTTLS -Username "user@domain.com" -Password $securePassword
 
 .EXAMPLE
-    .\Test-SMTPAuthentication.ps1 -SmtpServer "smtp.gmail.com" -SmtpPort 465 -Encryption SSL -Username "you@gmail.com" -Password "YourGmailAppPassword"
+    # You can also run without -Password and be prompted interactively
+    .\Test-SMTPAuthentication.ps1 -SmtpServer "smtp.gmail.com" -SmtpPort 465 -Encryption SSL -Username "you@gmail.com"
 
 .NOTES
     Author: Raymond Slater
@@ -46,13 +48,17 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$Username,
 
-    [Parameter(Mandatory = $true)]
-    [string]$Password
+    [Parameter(Mandatory = $false)]
+    [SecureString]$Password
 )
 
-# Convert password to a SecureString
-$secpasswd = ConvertTo-SecureString $Password -AsPlainText -Force
-$cred = New-Object System.Management.Automation.PSCredential ($Username, $secpasswd)
+# Prompt for password if not provided
+if (-not $Password) {
+    $Password = Read-Host -AsSecureString -Prompt "Enter SMTP password for $Username"
+}
+
+# Create credential object
+$cred = New-Object System.Management.Automation.PSCredential ($Username, $Password)
 
 # Set up SMTP client
 $smtpClient = New-Object System.Net.Mail.SmtpClient($SmtpServer, $SmtpPort)
