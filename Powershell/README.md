@@ -58,17 +58,6 @@ See [`Azure/README.md`](Azure/README.md) for detailed documentation.
 | `Create-AzureMailSendApp.ps1` | Creates Azure App Registration with Graph Mail.Send permissions |
 | `Create-HuduAzureApp.ps1` | Creates Azure App Registration for Hudu integration |
 
-### SharePoint Online Management
-
-Scripts for SharePoint Online inventory, migration validation, and file comparison.
-
-See [`SharePoint/README.md`](SharePoint/README.md) for detailed documentation.
-
-| Script | Description |
-|--------|-------------|
-| `Export-SharePointInventory.ps1` | Exports SharePoint library file inventory using PnP PowerShell |
-| `Compare.ps1` | Compares local vs SharePoint inventories for migration validation |
-
 ### Windows Administration
 
 General Windows system administration and troubleshooting utilities.
@@ -97,10 +86,6 @@ Most scripts require one or more of the following:
 - **Microsoft Graph PowerShell SDK** - For Azure/Graph scripts
   ```powershell
   Install-Module -Name Microsoft.Graph -Scope CurrentUser
-  ```
-- **PnP PowerShell** - For SharePoint scripts
-  ```powershell
-  Install-Module -Name PnP.PowerShell -Scope CurrentUser
   ```
 
 Specific requirements are documented in each script's help section and category README.

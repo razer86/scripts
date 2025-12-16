@@ -6,7 +6,7 @@ This repository contains a collection of automation and integration scripts for 
 
 ## PowerShell Scripts
 
-PowerShell automation scripts for Windows administration, Microsoft 365, Azure, and system management tasks. Includes utilities for Exchange Online, SharePoint, Azure app provisioning, and more.
+PowerShell automation scripts for Windows administration, Microsoft 365, Azure, and system management tasks. Includes utilities for Exchange Online, Azure app provisioning, and more.
 
 See [`Powershell/README.md`](Powershell/README.md) for complete documentation and usage examples.
 
