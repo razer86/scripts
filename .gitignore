@@ -4,6 +4,7 @@
 # === Output files ===
 *.csv
 *.json
+*.xlsx
 
 # === Cache files ===
 folder_cache.json
