@@ -31,3 +31,9 @@ chromedriver*
 
 # === Powershell Credentials
 *\config.ps1
+
+# === Exclude testing scripts ===
+Test-*.ps1
+
+# === SharePoint scripts (work in progress) ===
+Powershell/SharePoint/
