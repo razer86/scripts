@@ -1,0 +1,235 @@
+#!/bin/bash
+# =============================================================================
+# Script  : plex_dbrepair.sh
+# Author  : Raymond Slater
+# Version : 1.6.0
+# Created : 2026-03-23
+# Repository: https://github.com/razer86/scripts
+# =============================================================================
+# Description:
+#   Weekly Plex Media Server database maintenance script for Unraid.
+#   Checks for active Plex streams before running DBRepair (automatic mode).
+#   Designed for use with CA User Scripts and linuxserver/plex Docker container.
+#
+#   Configuration is loaded from plex_dbrepair.conf in the same directory
+#   as this script.
+#
+# =============================================================================
+
+# =========================================
+# ===   LOAD CONFIGURATION   ===
+# =========================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/plex_dbrepair.conf"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "ERROR: Config file not found at ${CONFIG_FILE}. Aborting."
+    exit 1
+fi
+
+source "$CONFIG_FILE"
+
+# ===   Validate required config values
+for VAR in PLEX_CONTAINER PLEX_TOKEN PLEX_PORT DBREPAIR_HOST_PATH DBREPAIR_CONTAINER_PATH DBREPAIR_URL LOG_FILE; do
+    if [ -z "${!VAR}" ]; then
+        echo "ERROR: Required config variable '${VAR}' is not set in ${CONFIG_FILE}. Aborting."
+        exit 1
+    fi
+done
+
+if [ -z "$DISCORD_WEBHOOK" ]; then
+    echo "INFO: DISCORD_WEBHOOK is not set. Discord notifications will be disabled."
+fi
+
+# =========================================
+# ===   FUNCTIONS   ===
+# =========================================
+
+# ===   Timestamped log output
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# ===   Send Discord embed notification
+# Usage: notify_discord "<colour>" "<title>" "<description>" [field_name field_value ...]
+# Colours: 3066993 = green, 15158332 = red, 16776960 = yellow
+notify_discord() {
+    [ -z "$DISCORD_WEBHOOK" ] && return 0
+
+    local colour="$1"
+    local title="$2"
+    local description="$3"
+    shift 3
+
+    local fields="[]"
+    if [ $# -ge 2 ]; then
+        fields="["
+        while [ $# -ge 2 ]; do
+            local field_name="$1"
+            local field_value="$2"
+            shift 2
+            fields+=$(printf '{"name":"%s","value":"%s","inline":true},' "$field_name" "$field_value")
+        done
+        fields="${fields%,}]"
+    fi
+
+    local payload
+    payload=$(cat <<EOF
+{
+  "embeds": [{
+    "title": "$title",
+    "description": "$description",
+    "color": $colour,
+    "fields": $fields,
+    "footer": { "text": "Unraid · $(hostname)" },
+    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  }]
+}
+EOF
+)
+    curl -s -m 10 -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK" > /dev/null 2>&1
+}
+
+# ===   Download or update DBRepair.sh on the host
+update_dbrepair() {
+    log "Downloading latest DBRepair.sh from GitHub..."
+    wget -q -O "$DBREPAIR_HOST_PATH" "$DBREPAIR_URL"
+
+    if [ $? -ne 0 ]; then
+        log "ERROR: Failed to download DBRepair.sh. Aborting."
+        notify_discord 15158332 "Plex DBRepair - Error" "Failed to download DBRepair.sh from GitHub. Maintenance aborted." \
+            "URL" "$DBREPAIR_URL"
+        exit 1
+    fi
+
+    chmod +x "$DBREPAIR_HOST_PATH"
+    log "DBRepair.sh downloaded successfully."
+}
+
+# ===   Copy DBRepair into the container and execute it
+run_dbrepair() {
+    log "Copying DBRepair.sh into container '${PLEX_CONTAINER}'..."
+    docker cp "$DBREPAIR_HOST_PATH" "${PLEX_CONTAINER}:${DBREPAIR_CONTAINER_PATH}"
+
+    if [ $? -ne 0 ]; then
+        log "ERROR: Failed to copy DBRepair.sh into container. Aborting."
+        notify_discord 15158332 "Plex DBRepair - Error" "Failed to copy DBRepair.sh into container. Maintenance aborted." \
+            "Container" "$PLEX_CONTAINER"
+        exit 1
+    fi
+
+    docker exec "$PLEX_CONTAINER" chmod +x "$DBREPAIR_CONTAINER_PATH"
+
+    log "Running DBRepair in automatic mode (stop -> auto -> start -> exit)..."
+    docker exec "$PLEX_CONTAINER" bash -c "${DBREPAIR_CONTAINER_PATH} stop auto start exit"
+
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        log "WARNING: DBRepair exited with code ${exit_code}. Check /config/DBRepair.log inside the container."
+        notify_discord 15158332 "Plex DBRepair - Warning" "DBRepair finished with a non-zero exit code. Review \`/config/DBRepair.log\`." \
+            "Container" "$PLEX_CONTAINER" \
+            "Exit Code" "$exit_code"
+    else
+        log "DBRepair completed successfully."
+    fi
+}
+
+# =========================================
+# ===   MAIN   ===
+# =========================================
+
+log "============================================================"
+log "Plex DBRepair weekly maintenance starting"
+START_TIME=$(date +%s)
+
+# ===   Verify Docker is available
+if ! command -v docker &>/dev/null; then
+    log "ERROR: docker command not found. Aborting."
+    notify_discord 15158332 "Plex DBRepair - Error" "Docker command not found on host. Maintenance aborted." \
+        "Host" "$(hostname)"
+    exit 1
+fi
+
+# ===   Verify Plex container is running
+if ! docker ps --format '{{.Names}}' | grep -q "^${PLEX_CONTAINER}$"; then
+    log "ERROR: Plex container '${PLEX_CONTAINER}' is not running. Aborting."
+    notify_discord 15158332 "Plex DBRepair - Error" "Plex container \`${PLEX_CONTAINER}\` is not running. Maintenance aborted." \
+        "Container" "$PLEX_CONTAINER"
+    exit 1
+fi
+
+# ===   Resolve container IP via docker inspect
+PLEX_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PLEX_CONTAINER" 2>/dev/null)
+
+if [ -z "$PLEX_IP" ]; then
+    log "ERROR: Could not resolve IP for container '${PLEX_CONTAINER}' via docker inspect. Aborting."
+    notify_discord 15158332 "Plex DBRepair - Error" "Could not resolve container IP via docker inspect. Maintenance aborted." \
+        "Container" "$PLEX_CONTAINER"
+    exit 1
+fi
+
+PLEX_URL="http://${PLEX_IP}:${PLEX_PORT}"
+log "Resolved Plex container IP: ${PLEX_IP}"
+
+# ===   Check for active streams
+log "Checking for active Plex streams at ${PLEX_URL}..."
+
+STREAM_RESPONSE=$(curl -s -m 10 \
+    -H "X-Plex-Token: ${PLEX_TOKEN}" \
+    -H "Accept: application/json" \
+    "${PLEX_URL}/status/sessions" 2>/dev/null)
+
+CURL_EXIT=$?
+
+if [ $CURL_EXIT -ne 0 ]; then
+    log "ERROR: curl failed (exit ${CURL_EXIT}). Could not reach Plex API at ${PLEX_URL}. Aborting."
+    notify_discord 15158332 "Plex DBRepair - Error" "Could not reach Plex API (curl exit ${CURL_EXIT}). Maintenance aborted." \
+        "URL" "$PLEX_URL"
+    exit 1
+fi
+
+if [ -z "$STREAM_RESPONSE" ]; then
+    log "ERROR: Empty response from Plex API at ${PLEX_URL}. Aborting."
+    notify_discord 15158332 "Plex DBRepair - Error" "Empty response from Plex API. Maintenance aborted." \
+        "URL" "$PLEX_URL"
+    exit 1
+fi
+
+STREAM_COUNT=$(echo "$STREAM_RESPONSE" | grep -o '"size":[0-9]*' | head -1 | grep -o '[0-9]*')
+
+if ! [[ "$STREAM_COUNT" =~ ^[0-9]+$ ]]; then
+    log "WARNING: Could not parse stream count from API response. Defaulting to 0."
+    STREAM_COUNT=0
+fi
+
+log "Active streams detected: ${STREAM_COUNT}"
+
+if [ "$STREAM_COUNT" -gt 0 ]; then
+    log "SKIPPED: ${STREAM_COUNT} active stream(s) detected. DBRepair will not run."
+    log "============================================================"
+    notify_discord 16776960 "Plex DBRepair - Skipped" "Active streams detected. Database maintenance was skipped." \
+        "Active Streams" "$STREAM_COUNT" \
+        "Container" "$PLEX_CONTAINER"
+    exit 0
+fi
+
+log "No active streams detected. Proceeding with maintenance."
+
+# ===   Update DBRepair from GitHub
+update_dbrepair
+
+# ===   Run the repair
+run_dbrepair
+
+# ===   Calculate and log duration
+END_TIME=$(date +%s)
+DURATION=$(( END_TIME - START_TIME ))
+DURATION_FMT="$(( DURATION / 60 ))m $(( DURATION % 60 ))s"
+
+log "Plex DBRepair weekly maintenance complete. Duration: ${DURATION_FMT}"
+log "============================================================"
+
+notify_discord 3066993 "Plex DBRepair - Complete" "Database maintenance completed successfully." \
+    "Container" "$PLEX_CONTAINER" \
+    "Duration" "$DURATION_FMT"

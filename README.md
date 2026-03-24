@@ -54,6 +54,7 @@ See [`General/README.md`](General/README.md) for details.
 
 **Available Tools:**
 - Firefox Profile Sorter (Python)
+- Unraid: Plex DBRepair weekly maintenance (Bash, CA User Scripts)
 
 ---
 

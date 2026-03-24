@@ -43,7 +43,8 @@ See [`Exchange Online/README.md`](Exchange%20Online/README.md) for detailed docu
 
 | Script | Description |
 |--------|-------------|
-| `Enable-ExchOnlineArchive.ps1` | Enables archive mailboxes for users |
+| `Invoke-ExchOnlineArchiveAudit.ps1` | Audits mailbox size and archive status; optionally enables archiving for mailboxes below a configurable free-space threshold |
+| `Enable-ExchOnlineArchive.ps1` | Scans all mailboxes, reports licensing via Graph, and auto-enables archives for mailboxes with < 25% free space |
 | `Get-AllMailboxPermissions.ps1` | Generates user-centric delegated permissions report (FullAccess, SendAs, SendOnBehalf) |
 | `Get-MailboxAccessByUser.ps1` | Shows all mailboxes where a specific user has delegated access |
 

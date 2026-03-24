@@ -1,0 +1,34 @@
+# =============================================================================
+# Config  : plex_dbrepair.conf
+# Author  : Raymond Slater
+# =============================================================================
+# Configuration file for plex_dbrepair.sh
+# Copy this file to plex_dbrepair.conf and fill in your values.
+# Place at: /boot/config/plugins/user.scripts/scripts/PlexDBRepair/plex_dbrepair.conf
+# =============================================================================
+
+# Docker container name for Plex Media Server
+PLEX_CONTAINER="plex"
+
+# Plex authentication token
+# Find yours at: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+PLEX_TOKEN="your-plex-token-here"
+
+# Plex port (default: 32400)
+PLEX_PORT="32400"
+
+# Host path where DBRepair.sh will be downloaded
+DBREPAIR_HOST_PATH="/mnt/user/appdata/PlexMediaServer/DBRepair.sh"
+
+# Path inside the container where DBRepair.sh will be copied
+DBREPAIR_CONTAINER_PATH="/config/DBRepair.sh"
+
+# GitHub release URL for DBRepair.sh (leave as-is unless self-hosting)
+DBREPAIR_URL="https://github.com/ChuckPa/PlexDBRepair/releases/latest/download/DBRepair.sh"
+
+# Path for the maintenance log file on the host
+LOG_FILE="/mnt/user/appdata/PlexMediaServer/dbrepair_schedule.log"
+
+# Discord webhook URL for notifications (optional — leave empty to disable)
+# Create one at: Server Settings > Integrations > Webhooks
+DISCORD_WEBHOOK=""

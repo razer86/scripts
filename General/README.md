@@ -90,6 +90,60 @@ Path=Profiles/abc123.work
 
 ---
 
+## Unraid Scripts
+
+Bash scripts for Unraid server automation, designed for use with the **CA User Scripts** plugin.
+
+### Unraid/config/plugins/user.scripts/scripts/PlexDBRepair/script
+
+Weekly Plex Media Server database maintenance script.
+
+**Synopsis:**
+Checks for active Plex streams before running [PlexDBRepair](https://github.com/ChuckPa/PlexDBRepair) in automatic mode inside a Docker container. Skips maintenance if streams are active and sends Discord notifications for all outcomes.
+
+**What It Does:**
+1. Validates Docker is available and the Plex container is running
+2. Resolves the container's IP via `docker inspect`
+3. Queries the Plex API for active streams — skips if any are found
+4. Downloads the latest `DBRepair.sh` from GitHub
+5. Copies it into the container and runs `stop → auto → start → exit`
+6. Reports duration and result via Discord embed notification
+
+**Configuration:**
+Settings are loaded from `plex_dbrepair.conf` in the same directory (excluded from git via `.gitignore`). Copy `plex_dbrepair.conf.example` to `plex_dbrepair.conf` and fill in your values:
+
+| Variable | Description |
+|----------|-------------|
+| `PLEX_CONTAINER` | Docker container name (e.g. `plex`) |
+| `PLEX_TOKEN` | Plex authentication token |
+| `PLEX_PORT` | Plex port (default: `32400`) |
+| `DBREPAIR_HOST_PATH` | Host path to download `DBRepair.sh` to |
+| `DBREPAIR_CONTAINER_PATH` | Path inside the container to copy `DBRepair.sh` |
+| `DBREPAIR_URL` | GitHub release URL for `DBRepair.sh` |
+| `LOG_FILE` | Path for the local log file |
+| `DISCORD_WEBHOOK` | Discord webhook URL for notifications |
+
+**Install Path (Unraid):**
+```
+/boot/config/plugins/user.scripts/scripts/PlexDBRepair/script
+/boot/config/plugins/user.scripts/scripts/PlexDBRepair/plex_dbrepair.conf
+```
+
+**Requirements:**
+- Unraid with CA User Scripts plugin
+- Docker with a running `linuxserver/plex` (or compatible) container
+- `curl`, `wget`, `docker` available on the host
+- Discord webhook for notifications
+
+**Notifications:**
+| Colour | Event |
+|--------|-------|
+| Green | Maintenance completed successfully |
+| Yellow | Skipped — active streams detected |
+| Red | Error (container not running, download failure, etc.) |
+
+---
+
 ## Author
 
 Raymond Slater

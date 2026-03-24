@@ -11,35 +11,81 @@ PowerShell scripts for managing Exchange Online mailboxes, permissions, and arch
   Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser
   ```
 
-- **Permissions**: Global Administrator or Exchange Administrator role
+- **Microsoft Graph Users Module** *(required by `Enable-ExchOnlineArchive.ps1`)*
+  ```powershell
+  Install-Module -Name Microsoft.Graph.Users -Scope CurrentUser
+  ```
+
+- **Permissions**: Global Administrator or Exchange Administrator role; `User.Read.All` and `Directory.Read.All` for Graph calls
 
 ---
 
 ## Scripts
 
-### Enable-ExchOnlineArchive.ps1
+### Invoke-ExchOnlineArchiveAudit.ps1
 
-Enables archive mailboxes for Exchange Online users.
+Reports mailbox size and in-place archive status; optionally enables archiving for mailboxes below a configurable free-space threshold.
 
 **Synopsis:**
-Automates the process of enabling archive mailboxes for users who need additional mailbox storage.
+Read-only audit by default. Pass `-EnableArchive` to act on flagged mailboxes. Supports `-WhatIf` and single-mailbox scoping.
 
 **Parameters:**
-- `-Identity` - User principal name or email address
-- `-AutoExpandingArchive` - Enable auto-expanding archive (optional)
+- `-FreeSpaceThresholdPercent` - Flag mailboxes below this % free space (default: `25`, range: 1–99)
+- `-EnableArchive` - Enable archiving on qualifying mailboxes (omit for report-only)
+- `-UserPrincipalName` - Scope to a single mailbox by UPN
+- `-OutputPath` - Full path for the exported CSV (default: timestamped file in Documents)
+- `-SkipConnect` - Skip `Connect-ExchangeOnline` if a session is already active
 
 **Usage:**
 ```powershell
-# Enable archive for a single user
-.\Enable-ExchOnlineArchive.ps1 -Identity user@domain.com
+# Audit all mailboxes (no changes made)
+.\Invoke-ExchOnlineArchiveAudit.ps1
 
-# Enable auto-expanding archive
-.\Enable-ExchOnlineArchive.ps1 -Identity user@domain.com -AutoExpandingArchive
+# Enable archiving for mailboxes with < 30% free space
+.\Invoke-ExchOnlineArchiveAudit.ps1 -EnableArchive -FreeSpaceThresholdPercent 30
+
+# Preview which mailboxes would be archived (WhatIf)
+.\Invoke-ExchOnlineArchiveAudit.ps1 -EnableArchive -WhatIf
+
+# Audit a single mailbox
+.\Invoke-ExchOnlineArchiveAudit.ps1 -UserPrincipalName jdoe@contoso.com
 ```
 
 **Requirements:**
-- User must have Exchange Online Plan 2 or appropriate license
-- Auto-expanding archive requires E3/E5 license
+- ExchangeOnlineManagement module only
+
+---
+
+### Enable-ExchOnlineArchive.ps1
+
+Scans all user mailboxes for size, quota, and archive status; retrieves assigned licenses via Microsoft Graph; and automatically enables in-place archives for mailboxes below 25% free space.
+
+**Synopsis:**
+Comprehensive archive-enablement script with license reporting. Enables archives automatically (unless `-ReportOnly` or `-WhatIf` is used) and exports a CSV named `Mailbox_Report_<CompanyName>_yyyyMMdd.csv`.
+
+**Parameters:**
+- `-ReportOnly` - Generate report without enabling any archives
+- `-LogPath` - Folder path where the CSV report is saved (default: Documents folder)
+
+**Usage:**
+```powershell
+# Enable archives for qualifying mailboxes and generate report
+.\Enable-ExchOnlineArchive.ps1
+
+# Report only — no changes made
+.\Enable-ExchOnlineArchive.ps1 -ReportOnly
+
+# Simulation mode
+.\Enable-ExchOnlineArchive.ps1 -WhatIf
+
+# Save report to a custom path
+.\Enable-ExchOnlineArchive.ps1 -ReportOnly -LogPath "C:\Reports"
+```
+
+**Requirements:**
+- ExchangeOnlineManagement module
+- Microsoft.Graph.Users module
+- `User.Read.All` and `Directory.Read.All` Graph permissions
 
 ---
 
@@ -128,12 +174,13 @@ Connect-ExchangeOnline
 .\Get-MailboxAccessByUser.ps1 -UPN employee@domain.com
 ```
 
-### Bulk Enable Archives
+### Enable Archives for Low Free-Space Mailboxes
 ```powershell
-# Enable archives for all users in a CSV
-Import-Csv users.csv | ForEach-Object {
-    .\Enable-ExchOnlineArchive.ps1 -Identity $_.UserPrincipalName
-}
+# Preview which mailboxes would be archived (no changes)
+.\Invoke-ExchOnlineArchiveAudit.ps1 -EnableArchive -WhatIf
+
+# Enable archives for all mailboxes with < 25% free space
+.\Invoke-ExchOnlineArchiveAudit.ps1 -EnableArchive
 ```
 
 ---
