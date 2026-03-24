@@ -17,24 +17,11 @@ __pycache__/
 *.pyo
 *.pyd
 
-# === VS Code settings (optional) ===
-.vscode/
-
 # === Logs ===
 *.log
 
-# === Selenium downloads (optional) ===
+# === Selenium downloads ===
 chromedriver*
 
 # === GitGuardian Cache ===
 *.cache_ggshield
-
-
-# === Powershell Credentials
-*\config.ps1
-
-# === Exclude testing scripts ===
-Test-*.ps1
-
-# === SharePoint scripts (work in progress) ===
-Powershell/SharePoint/
