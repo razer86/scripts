@@ -1,6 +1,7 @@
 # === Environment and credentials ===
 *.env
 *.conf
+*.psd1
 
 # === Output files ===
 *.csv

@@ -51,11 +51,18 @@
 
     Removes and recreates a custom-named application.
 
+.EXAMPLE
+    .\Create-HuduAzureApp.ps1 -HuduCompanyName "Contoso"
+
+    Creates the application and pushes the credentials directly into the
+    'Hudu-M365 Integration' asset for Contoso in Hudu. Reads HuduApiKey and
+    HuduBaseUrl from config.psd1 in the script directory.
+
 .NOTES
     Author: Raymond Slater
-    Version: 2.0
+    Version: 2.1
     License: MIT
-    Last Updated: 2024-12-15
+    Last Updated: 2025-01-01
     Requires: PowerShell 5.1 or higher, Microsoft.Graph modules
 
 .LINK
@@ -85,7 +92,20 @@ param (
     [switch]$Remove,
 
     [Parameter(HelpMessage = 'Remove and recreate the application if it exists')]
-    [switch]$Recreate
+    [switch]$Recreate,
+
+    # ── Hudu integration (optional) ────────────────────────────────────────────
+    [Parameter(HelpMessage = 'Hudu company slug or numeric ID — pushes credentials to the Hudu-M365 Integration asset')]
+    [string]$HuduCompanyId,
+
+    [Parameter(HelpMessage = 'Exact Hudu company name — alternative to HuduCompanyId')]
+    [string]$HuduCompanyName,
+
+    [Parameter(HelpMessage = 'Hudu instance base URL. Falls back to config.psd1, then HuduBaseUrl env var')]
+    [string]$HuduBaseUrl,
+
+    [Parameter(HelpMessage = 'Hudu API key. Falls back to config.psd1, then HuduApiKey env var')]
+    [string]$HuduApiKey
 )
 
 #==============================================================================
@@ -96,10 +116,39 @@ $ErrorActionPreference = 'Stop'             # Treat all errors as terminating (e
 $ProgressPreference = 'SilentlyContinue'    # Hide progress bars for faster execution
 
 #==============================================================================
+# Config loading — reads config.psd1 from the script directory.
+# Explicit command-line parameters always take precedence.
+#==============================================================================
+$_configPath = Join-Path $PSScriptRoot 'config.psd1'
+if (Test-Path $_configPath) {
+    try {
+        $_cfg = Import-PowerShellDataFile -Path $_configPath
+        if (-not $HuduApiKey  -and $_cfg.HuduApiKey)              { $HuduApiKey              = $_cfg.HuduApiKey }
+        if (-not $HuduBaseUrl -and $_cfg.HuduBaseUrl)             { $HuduBaseUrl              = $_cfg.HuduBaseUrl }
+        if (-not $HuduBaseUrl -and $env:HUDU_BASE_URL)            { $HuduBaseUrl              = $env:HUDU_BASE_URL }
+        if (-not $HuduApiKey  -and $env:HUDU_API_KEY)             { $HuduApiKey               = $env:HUDU_API_KEY }
+        if (-not $script:HuduM365AssetLayoutId -and $_cfg.HuduM365AssetLayoutId) {
+            $script:HuduM365AssetLayoutId = $_cfg.HuduM365AssetLayoutId
+        }
+        if (-not $script:HuduM365AssetName -and $_cfg.HuduM365AssetName) {
+            $script:HuduM365AssetName = $_cfg.HuduM365AssetName
+        }
+    }
+    catch { Write-Warning "Could not load config.psd1: $_" }
+}
+
+#==============================================================================
 # Script variables
 #==============================================================================
 $script:ScriptStart = Get-Date             # Track start time for performance monitoring
 $script:GraphContext = $null               # Will store Graph connection context for cleanup
+
+# Hudu target asset layout for M365 integration credentials
+if (-not $script:HuduM365AssetLayoutId) { $script:HuduM365AssetLayoutId = 0 }   # 0 = auto-discover by name
+if (-not $script:HuduM365AssetName)     { $script:HuduM365AssetName     = 'Hudu-M365 Integration' }
+
+# Set to $true by Grant-AppAdminConsent when any permission assignment fails
+$script:NeedsManualConsent = $false
 
 # Microsoft Graph Resource App ID
 $script:MsGraphResourceId = '00000003-0000-0000-c000-000000000000'
@@ -664,24 +713,28 @@ function Show-ApplicationDetails {
     param (
         [Parameter(Mandatory)]
         [Microsoft.Graph.PowerShell.Models.MicrosoftGraphApplication]$Application,
-        
+
         [Parameter(Mandatory)]
         [Microsoft.Graph.PowerShell.Models.MicrosoftGraphPasswordCredential]$Secret,
-        
+
         [Parameter(Mandatory)]
-        [string]$TenantId
+        [string]$TenantId,
+
+        [Parameter()]
+        [string]$CompanyName
     )
-    
+
     $separator = '=' * 80
-    
+    $displayName = if ($CompanyName) { "Hudu-M365 Integration - $CompanyName" } else { $Application.DisplayName }
+
     Write-Host "`n$separator" -ForegroundColor Cyan
     Write-Host '  Application Details for Hudu' -ForegroundColor Cyan
     Write-Host $separator -ForegroundColor Cyan
-    Write-Host "App Name:        $($Application.DisplayName)"
+    Write-Host "Name:            $displayName"
     Write-Host "Application ID:  $($Application.AppId)"
     Write-Host "Tenant ID:       $TenantId"
     Write-Host "Secret Key:      $($Secret.SecretText)" -ForegroundColor Yellow
-    Write-Host "Secret Expires:  $($Secret.EndDateTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+    Write-Host "Secret Expiry:   $($Secret.EndDateTime.ToString('dd/MM/yyyy')) (dd/MM/yyyy)"
     Write-Host "$separator`n" -ForegroundColor Cyan
 }
 
@@ -747,6 +800,78 @@ function Disconnect-MicrosoftGraphSafely {
     }
 }
 
+function Resolve-ServicePrincipal {
+    <#
+    .SYNOPSIS
+        Returns the service principal for an app, creating it if absent.
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param (
+        [Parameter(Mandatory)]
+        [string]$AppId
+    )
+
+    $sp = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
+    if (-not $sp) {
+        Write-Status 'Creating service principal for app...' -Type Info
+        $sp = New-MgServicePrincipal -AppId $AppId -ErrorAction Stop
+    }
+    return $sp
+}
+
+function Grant-AppAdminConsent {
+    <#
+    .SYNOPSIS
+        Programmatically grants admin consent for all required Graph permissions.
+        Sets $script:NeedsManualConsent if any assignment fails.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param (
+        [Parameter(Mandatory)]
+        [string]$ApplicationAppId
+    )
+
+    Write-Status 'Granting admin consent for required permissions...' -Type Info
+
+    # Resolve (or create) the service principal for our app registration
+    $ourSp = Resolve-ServicePrincipal -AppId $ApplicationAppId
+
+    # Resolve the Microsoft Graph service principal to get ResourceId
+    $graphSp = Get-MgServicePrincipal -Filter "appId eq '$script:MsGraphResourceId'" -ErrorAction Stop
+    if (-not $graphSp) { throw 'Microsoft Graph service principal not found in tenant.' }
+
+    # Fetch already-granted assignments so we can skip them
+    $grantedIds = @(
+        Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $ourSp.Id -All -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.AppRoleId }
+    )
+
+    foreach ($perm in $script:RequiredPermissions) {
+        if ($perm.Id -in $grantedIds) {
+            Write-Verbose "Permission '$($perm.Name)' already granted — skipping."
+            continue
+        }
+
+        if (-not $PSCmdlet.ShouldProcess($perm.Name, 'Grant admin consent')) { continue }
+
+        try {
+            New-MgServicePrincipalAppRoleAssignment `
+                -ServicePrincipalId $ourSp.Id `
+                -PrincipalId        $ourSp.Id `
+                -ResourceId         $graphSp.Id `
+                -AppRoleId          $perm.Id `
+                -ErrorAction Stop | Out-Null
+
+            Write-Status "Granted: $($perm.Name)" -Type Success
+        }
+        catch {
+            $script:NeedsManualConsent = $true
+            Write-Status ("Automatic consent failed for '$($perm.Name)': $($_.Exception.Message)") -Type Warning
+        }
+    }
+}
+
 function Get-ElapsedTime {
     <#
     .SYNOPSIS
@@ -755,9 +880,181 @@ function Get-ElapsedTime {
     [CmdletBinding()]
     [OutputType([string])]
     param()
-    
+
     $elapsed = (Get-Date) - $script:ScriptStart
     return $elapsed.TotalSeconds.ToString('0.0')
+}
+
+function Push-HuduM365Asset {
+    <#
+    .SYNOPSIS
+        Creates or updates the 'Hudu-M365 Integration' asset for a company in Hudu.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'SecretKey',
+        Justification = 'Plain text required — value is written to Hudu password field via REST API.')]
+    [CmdletBinding(SupportsShouldProcess)]
+    param (
+        [Parameter(Mandatory)] [string]   $ApplicationId,
+        [Parameter(Mandatory)] [string]   $TenantId,
+        [Parameter(Mandatory)] [string]   $SecretKey,
+        [Parameter(Mandatory)] [datetime] $SecretExpiry,
+
+        # ── Hudu integration (all optional) ───────────────────────────────────
+        [Parameter()] [string] $AzureCompanyName = '',
+        [Parameter()] [string] $HuduCompanyId    = '',
+        [Parameter()] [string] $HuduCompanyName  = '',
+        [Parameter()] [string] $HuduBaseUrl      = '',
+        [Parameter()] [string] $HuduApiKey       = ''
+    )
+
+    $huduUrl = $HuduBaseUrl.TrimEnd('/')
+    $huduKey = $HuduApiKey
+
+    if (-not $huduUrl -or -not $huduKey) {
+        Write-Status 'Hudu credentials not configured — skipping Hudu push.' -Type Warning
+        Write-Host '  Add HuduBaseUrl and HuduApiKey to config.psd1 in the script directory,' -ForegroundColor DarkGray
+        Write-Host '  or pass -HuduApiKey and -HuduBaseUrl on the command line.' -ForegroundColor DarkGray
+        return
+    }
+
+    $headers = @{ 'x-api-key' = $huduKey; 'Content-Type' = 'application/json' }
+
+    # ── Resolve asset layout ID ───────────────────────────────────────────────
+    $layoutId = $script:HuduM365AssetLayoutId
+    if ($layoutId -eq 0) {
+        try {
+            $layoutName = 'Hudu-M365 Integration'
+            $encoded    = [uri]::EscapeDataString($layoutName)
+            $layouts    = @((Invoke-RestMethod -Uri "$huduUrl/api/v1/asset_layouts?search=$encoded&page_size=25" `
+                            -Headers $headers -Method Get).asset_layouts)
+            $layout     = $layouts | Where-Object { $_.name -eq $layoutName } | Select-Object -First 1
+
+            if (-not $layout) {
+                Write-Status "No asset layout named '$layoutName' found in Hudu — skipping Hudu push." -Type Warning
+                Write-Host "  Create the layout first or set HuduM365AssetLayoutId in config.psd1." -ForegroundColor DarkGray
+                return
+            }
+            $layoutId = $layout.id
+            Write-Verbose "Resolved asset layout '$layoutName' to id $layoutId"
+        }
+        catch {
+            Write-Status "Could not query Hudu asset layouts: $_ — skipping Hudu push." -Type Warning
+            return
+        }
+    }
+
+    # ── Resolve company ───────────────────────────────────────────────────────
+    $company = $null
+
+    if ($HuduCompanyId) {
+        try {
+            if ($HuduCompanyId -match '^\d+$') {
+                $company = (Invoke-RestMethod -Uri "$huduUrl/api/v1/companies/$HuduCompanyId" `
+                            -Headers $headers -Method Get).company
+            }
+            else {
+                $encoded = [uri]::EscapeDataString($HuduCompanyId)
+                $company = @((Invoke-RestMethod -Uri "$huduUrl/api/v1/companies?slug=$encoded&page_size=1" `
+                              -Headers $headers -Method Get).companies) | Select-Object -First 1
+            }
+        }
+        catch { Write-Status "Hudu company lookup failed for '$HuduCompanyId': $_" -Type Warning; return }
+    }
+    elseif ($HuduCompanyName) {
+        try {
+            $encoded = [uri]::EscapeDataString($HuduCompanyName)
+            $company = @((Invoke-RestMethod -Uri "$huduUrl/api/v1/companies?search=$encoded&page_size=25" `
+                          -Headers $headers -Method Get).companies) |
+                        Where-Object { $_.name -eq $HuduCompanyName } | Select-Object -First 1
+        }
+        catch { Write-Status "Hudu company lookup failed for '$HuduCompanyName': $_" -Type Warning; return }
+    }
+    else {
+        # Interactive prompt
+        Write-Host ''
+        Write-Host '  Paste the Hudu company URL, slug, or numeric ID' -ForegroundColor DarkCyan
+        Write-Host '  (or press Enter to skip Hudu push):' -ForegroundColor DarkCyan
+        $companyInput = (Read-Host '  Company URL / slug / ID').Trim()
+
+        if (-not $companyInput) {
+            Write-Status 'Hudu push skipped.' -Type Info
+            return
+        }
+
+        $companyId = if ($companyInput -match '://') {
+            try { ([System.Uri]$companyInput).Segments[-1].TrimEnd('/') }
+            catch { Write-Status "Could not parse URL '$companyInput': $_" -Type Warning; return }
+        } else { $companyInput }
+
+        try {
+            if ($companyId -match '^\d+$') {
+                $company = (Invoke-RestMethod -Uri "$huduUrl/api/v1/companies/$companyId" `
+                            -Headers $headers -Method Get).company
+            }
+            else {
+                $encoded = [uri]::EscapeDataString($companyId)
+                $company = @((Invoke-RestMethod -Uri "$huduUrl/api/v1/companies?slug=$encoded&page_size=1" `
+                              -Headers $headers -Method Get).companies) | Select-Object -First 1
+            }
+        }
+        catch { Write-Status "Hudu company lookup failed: $_" -Type Warning; return }
+    }
+
+    if (-not $company) {
+        Write-Status 'No matching Hudu company found — skipping Hudu push.' -Type Warning
+        return
+    }
+
+    $companyId   = $company.id
+    $companyName = $company.name
+    Write-Host "  Company: $companyName (id: $companyId)" -ForegroundColor Green
+
+    # ── Build payload ─────────────────────────────────────────────────────────
+    $assetName = "Hudu-M365 Integration - $(if ($AzureCompanyName) { $AzureCompanyName } else { $companyName })"
+
+    $body = @{
+        name            = $assetName
+        asset_layout_id = $layoutId
+        custom_fields   = @(
+            @{ application_id = $ApplicationId }
+            @{ tenant_id      = $TenantId }
+            @{ secret_key     = $SecretKey }
+            @{ secret_expiry  = $SecretExpiry.ToString('yyyy/MM/dd') }
+        )
+    } | ConvertTo-Json -Depth 5
+
+    # ── Find existing asset ───────────────────────────────────────────────────
+    try {
+        $existingAsset = @((Invoke-RestMethod `
+            -Uri     "$huduUrl/api/v1/assets?company_id=$companyId&asset_layout_id=$layoutId&page_size=5" `
+            -Headers $headers -Method Get).assets) | Select-Object -First 1
+    }
+    catch {
+        Write-Warning "Could not query Hudu assets: $_"
+        $existingAsset = $null
+    }
+
+    # ── Push ──────────────────────────────────────────────────────────────────
+    $whatIfTarget = if ($existingAsset) { "Update Hudu asset '$($existingAsset.name)' (id: $($existingAsset.id))" }
+                   else                 { "Create Hudu asset '$assetName' for company '$companyName'" }
+
+    if (-not $PSCmdlet.ShouldProcess($whatIfTarget, 'Push to Hudu')) { return }
+
+    try {
+        if ($existingAsset) {
+            Invoke-RestMethod -Uri "$huduUrl/api/v1/assets/$($existingAsset.id)" `
+                -Headers $headers -Method Put -Body $body | Out-Null
+            Write-Status "Hudu asset updated: $($existingAsset.name) (id: $($existingAsset.id))" -Type Success
+        }
+        else {
+            $created = Invoke-RestMethod -Uri "$huduUrl/api/v1/companies/$companyId/assets" `
+                -Headers $headers -Method Post -Body $body
+            Write-Status "Hudu asset created: $($created.asset.name) (id: $($created.asset.id))" -Type Success
+        }
+    }
+    catch {
+        Write-Status "Hudu asset push failed — save the details above manually: $_" -Type Warning
+    }
 }
 
 #==============================================================================
@@ -892,14 +1189,40 @@ try {
         #======================================================================
         # Display configuration
         #======================================================================
-        
-        Show-ApplicationDetails -Application $application -Secret $secret -TenantId $tenantInfo.TenantId
-        
+
+        Show-ApplicationDetails -Application $application -Secret $secret -TenantId $tenantInfo.TenantId `
+            -CompanyName $tenantInfo.DisplayName
+
         #======================================================================
-        # Request admin consent
+        # Push credentials to Hudu (if configured)
         #======================================================================
-        
-        Request-AdminConsent -ApplicationId $application.AppId -CompanyName $tenantInfo.DisplayName
+
+        if ($HuduCompanyId -or $HuduCompanyName) {
+            Write-Status 'Pushing credentials to Hudu...' -Type Info
+            Push-HuduM365Asset `
+                -ApplicationId    $application.AppId `
+                -TenantId         $tenantInfo.TenantId `
+                -SecretKey        $secret.SecretText `
+                -SecretExpiry     $secret.EndDateTime `
+                -AzureCompanyName $tenantInfo.DisplayName `
+                -HuduCompanyId    $HuduCompanyId `
+                -HuduCompanyName  $HuduCompanyName `
+                -HuduBaseUrl      $HuduBaseUrl `
+                -HuduApiKey       $HuduApiKey
+        }
+
+        #======================================================================
+        # Grant admin consent
+        #======================================================================
+
+        Grant-AppAdminConsent -ApplicationAppId $application.AppId
+
+        if ($script:NeedsManualConsent) {
+            Write-Status 'One or more permissions could not be granted automatically — manual consent required.' -Type Warning
+            Request-AdminConsent -ApplicationId $application.AppId -CompanyName $tenantInfo.DisplayName
+        } else {
+            Write-Status 'Admin consent granted successfully — no portal action required.' -Type Success
+        }
     }
     
     #==========================================================================

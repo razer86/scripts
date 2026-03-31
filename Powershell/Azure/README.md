@@ -94,40 +94,7 @@ Send-MgUserMail -UserId "sender@domain.com" -Message @{
 
 ### Create-HuduAzureApp.ps1
 
-Creates an Azure App Registration for Hudu documentation platform integration.
-
-**Synopsis:**
-Automates the creation of an Azure AD app configured for Hudu integration, enabling automated synchronization of Azure/M365 data into Hudu documentation.
-
-**What It Does:**
-1. Creates Azure AD app registration for Hudu
-2. Configures required Microsoft Graph API permissions
-3. Generates client secret for authentication
-4. Outputs credentials for Hudu configuration
-
-**Usage:**
-```powershell
-# Run the script
-.\Create-HuduAzureApp.ps1
-```
-
-**Required Hudu Permissions:**
-The app is configured with permissions commonly needed for Hudu integrations:
-- User.Read.All - Read user profiles
-- Group.Read.All - Read group information
-- Device.Read.All - Read device information
-- Directory.Read.All - Read directory data
-- (Additional permissions as configured in script)
-
-**Post-Creation:**
-1. Grant admin consent in Azure Portal
-2. Add credentials to Hudu > Admin > Integrations > Microsoft
-3. Configure sync settings in Hudu
-
-**Notes:**
-- Check script comments for specific permissions configured
-- Permissions may need adjustment based on Hudu integration requirements
-- Review Hudu documentation for latest integration requirements
+> **Moved** — this script now lives in [`../Hudu/`](../Hudu/). See the [Hudu README](../Hudu/README.md) for full documentation.
 
 ---
 
@@ -139,14 +106,6 @@ The app is configured with permissions commonly needed for Hudu integrations:
 .\Create-AzureMailSendApp.ps1
 
 # Save the output credentials securely
-```
-
-### Create Hudu Integration
-```powershell
-# Create app for Hudu sync
-.\Create-HuduAzureApp.ps1
-
-# Configure in Hudu portal
 ```
 
 ### Verify App Permissions

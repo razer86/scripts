@@ -1,0 +1,27 @@
+# Migrate-HuduM365Passwords.ps1 — local configuration
+# ---------------------------------------------------------------------------
+# Copy this file to config.psd1 and fill in your values.
+# config.psd1 is listed in .gitignore — it will never be committed.
+#
+# All keys are optional. Any value not set here can be supplied as a
+# command-line parameter when running the script.
+# ---------------------------------------------------------------------------
+@{
+    # -- Hudu integration -----------------------------------------------------
+
+    # Base URL of your Hudu instance (no trailing slash).
+    HuduBaseUrl = 'https://your-hudu-instance.huducloud.com'
+
+    # API key — found in Hudu under Administrator > API Keys.
+    HuduApiKey  = 'your-api-key-here'
+
+    # Numeric ID of the 'Hudu-M365 Integration' asset layout.
+    # Set to 0 (or omit) to let the script discover it by name automatically.
+    # Run Get-HuduAssetLayouts.ps1 to list all layouts and their IDs.
+    HuduM365AssetLayoutId = 0
+
+    # Asset name prefix used when creating/updating the credential asset.
+    # The asset is named "<HuduM365AssetName> - <Company Name>".
+    # Change this only if you have renamed the layout in Hudu.
+    HuduM365AssetName = 'Hudu-M365 Integration'
+}
