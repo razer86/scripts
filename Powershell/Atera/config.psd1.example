@@ -1,0 +1,13 @@
+@{
+    # Atera API key (Admin > API in Atera portal)
+    ApiKey       = "your-api-key-here"
+
+    # Atera API base URL
+    BaseUrl      = "https://app.atera.com/api/v3"
+
+    # Results per page (max 50)
+    ItemsPerPage = 50
+
+    # Output CSV filename (relative to script directory)
+    OutputFile   = "AteraAgents.csv"
+}

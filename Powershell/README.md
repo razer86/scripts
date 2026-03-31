@@ -59,6 +59,28 @@ See [`Azure/README.md`](Azure/README.md) for detailed documentation.
 | `Create-AzureMailSendApp.ps1` | Creates Azure App Registration with Graph Mail.Send permissions |
 | `Create-HuduAzureApp.ps1` | Creates Azure App Registration for Hudu integration |
 
+### Atera RMM
+
+Scripts for interacting with the Atera RMM API.
+
+| Script | Description |
+|--------|-------------|
+| `Get-AteraAgents.ps1` | Exports all Atera agents to CSV with device details, flags stale agents (90+ days), and optionally removes them |
+
+**Usage:**
+```powershell
+# Export all agents
+.\Atera\Get-AteraAgents.ps1
+
+# Preview stale agent removal
+.\Atera\Get-AteraAgents.ps1 -RemoveStale -WhatIf
+
+# Export stale agents to a separate CSV
+.\Atera\Get-AteraAgents.ps1 -RemoveStale -ListOnly
+```
+
+**Configuration:** Copy `config.psd1.example` to `config.psd1` and add your API key. The `.psd1` is gitignored.
+
 ### Windows Administration
 
 General Windows system administration and troubleshooting utilities.

@@ -58,6 +58,18 @@ See [`General/README.md`](General/README.md) for details.
 
 ---
 
+## Atera RMM
+
+Scripts for querying and managing Atera RMM agents via the REST API.
+
+See [`Powershell/README.md`](Powershell/README.md) for detailed documentation.
+
+**Available Tools:**
+- Agent inventory export with stale device detection (90+ days)
+- Stale agent removal with WhatIf/Confirm support
+
+---
+
 ## Author
 
 Raymond Slater
