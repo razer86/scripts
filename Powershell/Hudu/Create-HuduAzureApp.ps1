@@ -127,10 +127,10 @@ if (Test-Path $_configPath) {
         if (-not $HuduBaseUrl -and $_cfg.HuduBaseUrl)             { $HuduBaseUrl              = $_cfg.HuduBaseUrl }
         if (-not $HuduBaseUrl -and $env:HUDU_BASE_URL)            { $HuduBaseUrl              = $env:HUDU_BASE_URL }
         if (-not $HuduApiKey  -and $env:HUDU_API_KEY)             { $HuduApiKey               = $env:HUDU_API_KEY }
-        if (-not $script:HuduM365AssetLayoutId -and $_cfg.HuduM365AssetLayoutId) {
+        if ($_cfg.HuduM365AssetLayoutId) {
             $script:HuduM365AssetLayoutId = $_cfg.HuduM365AssetLayoutId
         }
-        if (-not $script:HuduM365AssetName -and $_cfg.HuduM365AssetName) {
+        if ($_cfg.HuduM365AssetName) {
             $script:HuduM365AssetName = $_cfg.HuduM365AssetName
         }
     }
