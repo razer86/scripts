@@ -449,8 +449,8 @@ function Compare-ApplicationPermissions {
     $requiredPermissionIds = $script:RequiredPermissions | ForEach-Object { $_.Id }
     
     # Check for missing and extra permissions
-    $missingPermissions = $requiredPermissionIds | Where-Object { $_ -notin $existingPermissionIds }
-    $extraPermissions = $existingPermissionIds | Where-Object { $_ -notin $requiredPermissionIds }
+    $missingPermissions = @($requiredPermissionIds | Where-Object { $_ -notin $existingPermissionIds })
+    $extraPermissions = @($existingPermissionIds | Where-Object { $_ -notin $requiredPermissionIds })
     
     if ($missingPermissions.Count -gt 0) {
         Write-Verbose "Missing permissions: $($missingPermissions.Count)"
@@ -1185,43 +1185,53 @@ try {
         #======================================================================
         
         $secret = New-ApplicationSecret -ApplicationId $application.Id -ExpiryInMonths $SecretExpiryInMonths
-        
-        #======================================================================
-        # Display configuration
-        #======================================================================
 
-        Show-ApplicationDetails -Application $application -Secret $secret -TenantId $tenantInfo.TenantId `
-            -CompanyName $tenantInfo.DisplayName
-
-        #======================================================================
-        # Push credentials to Hudu (if configured)
-        #======================================================================
-
-        if ($HuduCompanyId -or $HuduCompanyName) {
-            Write-Status 'Pushing credentials to Hudu...' -Type Info
-            Push-HuduM365Asset `
-                -ApplicationId    $application.AppId `
-                -TenantId         $tenantInfo.TenantId `
-                -SecretKey        $secret.SecretText `
-                -SecretExpiry     $secret.EndDateTime `
-                -AzureCompanyName $tenantInfo.DisplayName `
-                -HuduCompanyId    $HuduCompanyId `
-                -HuduCompanyName  $HuduCompanyName `
-                -HuduBaseUrl      $HuduBaseUrl `
-                -HuduApiKey       $HuduApiKey
+        if ($null -eq $secret) {
+            # WhatIf mode — secret was not actually created
+            Write-Host "`n[WHATIF] Would display application details and credentials"
+            if ($HuduCompanyId -or $HuduCompanyName) {
+                Write-Host "[WHATIF] Would push credentials to Hudu"
+            }
+            Write-Host "[WHATIF] Would grant admin consent"
         }
+        else {
+            #======================================================================
+            # Display configuration
+            #======================================================================
 
-        #======================================================================
-        # Grant admin consent
-        #======================================================================
+            Show-ApplicationDetails -Application $application -Secret $secret -TenantId $tenantInfo.TenantId `
+                -CompanyName $tenantInfo.DisplayName
 
-        Grant-AppAdminConsent -ApplicationAppId $application.AppId
+            #======================================================================
+            # Push credentials to Hudu (if configured)
+            #======================================================================
 
-        if ($script:NeedsManualConsent) {
-            Write-Status 'One or more permissions could not be granted automatically — manual consent required.' -Type Warning
-            Request-AdminConsent -ApplicationId $application.AppId -CompanyName $tenantInfo.DisplayName
-        } else {
-            Write-Status 'Admin consent granted successfully — no portal action required.' -Type Success
+            if ($HuduCompanyId -or $HuduCompanyName) {
+                Write-Status 'Pushing credentials to Hudu...' -Type Info
+                Push-HuduM365Asset `
+                    -ApplicationId    $application.AppId `
+                    -TenantId         $tenantInfo.TenantId `
+                    -SecretKey        $secret.SecretText `
+                    -SecretExpiry     $secret.EndDateTime `
+                    -AzureCompanyName $tenantInfo.DisplayName `
+                    -HuduCompanyId    $HuduCompanyId `
+                    -HuduCompanyName  $HuduCompanyName `
+                    -HuduBaseUrl      $HuduBaseUrl `
+                    -HuduApiKey       $HuduApiKey
+            }
+
+            #======================================================================
+            # Grant admin consent
+            #======================================================================
+
+            Grant-AppAdminConsent -ApplicationAppId $application.AppId
+
+            if ($script:NeedsManualConsent) {
+                Write-Status 'One or more permissions could not be granted automatically — manual consent required.' -Type Warning
+                Request-AdminConsent -ApplicationId $application.AppId -CompanyName $tenantInfo.DisplayName
+            } else {
+                Write-Status 'Admin consent granted successfully — no portal action required.' -Type Success
+            }
         }
     }
     
