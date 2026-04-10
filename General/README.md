@@ -142,6 +142,47 @@ Settings are loaded from `plex_dbrepair.conf` in the same directory (excluded fr
 | Yellow | Skipped — active streams detected |
 | Red | Error (container not running, download failure, etc.) |
 
+## Tautulli Scripts
+
+Python scripts triggered by Tautulli notifications for media automation.
+
+### Unraid/Tautulli/update_radarr_from_plex.py
+
+Cleans up stale Radarr entries for movies that have been acquired and added to Plex.
+
+**Language:** Python 3
+
+**Synopsis:**
+Triggered by a Tautulli library scan notification. When Tautulli detects a movie in the Plex library, this script looks up the matching entry in Radarr by IMDb ID. Since the download process bypasses Radarr's file handling, Radarr still tracks the movie but with no associated file. This script removes those stale entries and optionally sends a Discord notification.
+
+**What It Does:**
+1. Receives an IMDb ID from Tautulli via command-line argument (library scan trigger)
+2. Queries the Radarr API for a matching movie
+3. If found with `hasFile=False`, deletes the movie from Radarr
+4. Sends a Discord notification on successful removal (if configured)
+5. Logs all actions to a configurable log file
+
+**Configuration:**
+Settings are loaded from a `.env` file in the same directory (excluded from git via `.gitignore`). Copy `.env.example` to `.env` and fill in your values:
+
+| Variable | Description |
+|----------|-------------|
+| `RADARR_URL` | Radarr base URL (e.g. `http://10.0.0.1:7878/radarr`) |
+| `RADARR_API_KEY` | Radarr API key |
+| `LOG_FILE` | Path for the log file (default: `/config/logs/plex2radarr.log`) |
+| `DISCORD_WEBHOOK` | Discord webhook URL (optional — leave empty to disable) |
+
+**Usage (Tautulli notification agent):**
+```bash
+python /path/to/update_radarr_from_plex.py imdbid={imdb_id}
+```
+
+**Requirements:**
+- Python 3.6+
+- `requests`, `python-dotenv` (`pip install requests python-dotenv`)
+- Radarr instance with API access
+- Tautulli configured to trigger the script on playback events
+
 ---
 
 ## Author
