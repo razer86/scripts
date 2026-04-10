@@ -11,8 +11,8 @@
 #   Checks for active Plex streams before running DBRepair (automatic mode).
 #   Designed for use with CA User Scripts and linuxserver/plex Docker container.
 #
-#   Configuration is loaded from plex_dbrepair.conf in the same directory
-#   as this script.
+#   Configuration is loaded from plex_dbrepair.conf at the persistent
+#   /boot path (CA User Scripts copies the script to /tmp at runtime).
 #
 # =============================================================================
 
@@ -20,7 +20,9 @@
 # ===   LOAD CONFIGURATION   ===
 # =========================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# CA User Scripts copies the script to /tmp at runtime, so BASH_SOURCE
+# points to the temp copy. Use the persistent /boot path instead.
+SCRIPT_DIR="/boot/config/plugins/user.scripts/scripts/PlexDBRepair"
 CONFIG_FILE="${SCRIPT_DIR}/plex_dbrepair.conf"
 
 if [ ! -f "$CONFIG_FILE" ]; then
