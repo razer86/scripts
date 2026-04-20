@@ -9,7 +9,7 @@ PowerShell automation scripts for Windows administration, Microsoft 365, Azure, 
 Use the aliases below to quickly run common admin tasks via `irm | iex` in PowerShell.
 
 | Alias        | Script                         | Description                                                |
-|-----------_--|--------------------------------|------------------------------------------------------------|
+|--------------|--------------------------------|------------------------------------------------------------|
 | `/speedtest` | `Run-Speedtest.ps1`            | Run and auto-update the latest Ookla Speedtest CLI.        |
 | `/addwifi`   | `Add-WirelessNetwork.ps1`      | Add a Wi-Fi profile using SSID and password.               |
 | `/reckonfw`  | `Configure-ReckonFirewall.ps1` | Add/remove firewall rules for Reckon Accounts.             |
@@ -42,7 +42,7 @@ Scripts for managing Exchange Online mailboxes, permissions, and archiving.
 See [`Exchange Online/README.md`](Exchange%20Online/README.md) for detailed documentation.
 
 | Script | Description |
-|--------|-------------|
+| ------ | ----------- |
 | `Invoke-ExchOnlineArchiveAudit.ps1` | Audits mailbox size and archive status; optionally enables archiving for mailboxes below a configurable free-space threshold |
 | `Enable-ExchOnlineArchive.ps1` | Scans all mailboxes, reports licensing via Graph, and auto-enables archives for mailboxes with < 25% free space |
 | `Get-AllMailboxPermissions.ps1` | Generates user-centric delegated permissions report (FullAccess, SendAs, SendOnBehalf) |
@@ -54,20 +54,21 @@ Scripts for automating Azure AD app registrations and service principal configur
 
 See [`Azure/README.md`](Azure/README.md) for detailed documentation.
 
-| Script | Description |
-|--------|-------------|
+| Script                        | Description                                                     |
+|-------------------------------|-----------------------------------------------------------------|
 | `Create-AzureMailSendApp.ps1` | Creates Azure App Registration with Graph Mail.Send permissions |
-| `Create-HuduAzureApp.ps1` | Creates Azure App Registration for Hudu integration |
+| `Create-HuduAzureApp.ps1`     | Creates Azure App Registration for Hudu integration             |
 
 ### Atera RMM
 
 Scripts for interacting with the Atera RMM API.
 
-| Script | Description |
-|--------|-------------|
-| `Get-AteraAgents.ps1` | Exports all Atera agents to CSV with device details, flags stale agents (90+ days), and optionally removes them |
+| Script                  | Description                                                                                                      |
+|-------------------------|------------------------------------------------------------------------------------------------------------------|
+| `Get-AteraAgents.ps1`   | Exports all Atera agents to CSV with device details, flags stale agents (90+ days), and optionally removes them |
 
 **Usage:**
+
 ```powershell
 # Export all agents
 .\Atera\Get-AteraAgents.ps1
@@ -86,7 +87,7 @@ Scripts for interacting with the Atera RMM API.
 General Windows system administration and troubleshooting utilities.
 
 | Script | Description |
-|--------|-------------|
+| ------ | ----------- |
 | `Add-WirelessNetwork.ps1` | Adds wireless network profile with SSID and password |
 | `Check-OneDriveSyncHealth.ps1` | Checks OneDrive sync status and file count (warns if >280k files) |
 | `Configure-ReckonFirewall.ps1` | Configures Windows Firewall rules for Reckon Accounts software |
@@ -102,11 +103,15 @@ General Windows system administration and troubleshooting utilities.
 Most scripts require one or more of the following:
 
 - **Windows PowerShell 5.1** or **PowerShell 7+**
+
 - **Exchange Online Management Module** - For Exchange scripts
+
   ```powershell
   Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser
   ```
+
 - **Microsoft Graph PowerShell SDK** - For Azure/Graph scripts
+
   ```powershell
   Install-Module -Name Microsoft.Graph -Scope CurrentUser
   ```
@@ -130,4 +135,4 @@ Most scripts support common parameters like `-Verbose` and `-WhatIf` where appli
 ## Author
 
 Raymond Slater
-https://github.com/razer86/scripts
+<https://github.com/razer86/scripts>
