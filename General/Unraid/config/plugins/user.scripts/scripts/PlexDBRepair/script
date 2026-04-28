@@ -2,7 +2,7 @@
 # =============================================================================
 # Script  : plex_dbrepair.sh
 # Author  : Raymond Slater
-# Version : 1.7.0
+# Version : 2.0.0
 # Created : 2026-03-23
 # Repository: https://github.com/razer86/scripts
 # =============================================================================
@@ -11,26 +11,28 @@
 #   Checks for active Plex streams before running DBRepair (automatic mode).
 #   Designed for use with CA User Scripts and linuxserver/plex Docker container.
 #
-#   Configuration is loaded from plex_dbrepair.conf at the persistent
-#   /boot path (CA User Scripts copies the script to /tmp at runtime).
+#   Configuration values are injected at deploy time by deploy.ps1 from a
+#   local .secrets file (kept out of the public repo via .gitignore).
+#   The repo copy ships with empty values; runtime validation
+#   refuses to run if any required value is still empty.
 #
 # =============================================================================
 
 # =========================================
-# ===   LOAD CONFIGURATION   ===
+# ===   CONFIGURATION   ===
 # =========================================
+# Values are injected by deploy.ps1 from .secrets at deploy time.
+# Do NOT commit real values here — the deploy script rewrites the
+# right-hand side of each assignment below.
 
-# CA User Scripts copies the script to /tmp at runtime, so BASH_SOURCE
-# points to the temp copy. Use the persistent /boot path instead.
-SCRIPT_DIR="/boot/config/plugins/user.scripts/scripts/PlexDBRepair"
-CONFIG_FILE="${SCRIPT_DIR}/plex_dbrepair.conf"
-
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "ERROR: Config file not found at ${CONFIG_FILE}. Aborting."
-    exit 1
-fi
-
-source "$CONFIG_FILE"
+PLEX_CONTAINER=""
+PLEX_TOKEN=""
+PLEX_PORT=""
+DBREPAIR_HOST_PATH=""
+DBREPAIR_CONTAINER_PATH=""
+DBREPAIR_URL=""
+LOG_FILE=""
+DISCORD_WEBHOOK=""
 
 if [ -z "$DISCORD_WEBHOOK" ]; then
     echo "INFO: DISCORD_WEBHOOK is not set. Discord notifications will be disabled."
@@ -134,10 +136,12 @@ run_dbrepair() {
 # =========================================
 
 # ===   Validate required config values (echo, not log — LOG_FILE may be the missing one)
+# Values are baked in at the top of this script by deploy.ps1; an empty value
+# means the deploy step was skipped or .secrets is missing the entry.
 for VAR in PLEX_CONTAINER PLEX_TOKEN PLEX_PORT DBREPAIR_HOST_PATH DBREPAIR_CONTAINER_PATH DBREPAIR_URL LOG_FILE; do
     if [ -z "${!VAR}" ]; then
-        echo "ERROR: Required config variable '${VAR}' is not set in ${CONFIG_FILE}. Aborting."
-        notify_discord 15158332 "Plex DBRepair - Error" "Required config variable \`${VAR}\` is not set in \`${CONFIG_FILE}\`. Maintenance aborted." \
+        echo "ERROR: Required config variable '${VAR}' is empty. Re-run deploy.ps1 against a populated .secrets file. Aborting."
+        notify_discord 15158332 "Plex DBRepair - Error" "Required config variable \`${VAR}\` is empty. Re-run \`deploy.ps1\` with a populated \`.secrets\`. Maintenance aborted." \
             "Variable" "$VAR"
         exit 1
     fi
@@ -152,8 +156,8 @@ START_TIME=$(date +%s)
 for VAR in DBREPAIR_HOST_PATH LOG_FILE; do
     if [[ "${!VAR}" == /mnt/user/* ]]; then
         log "ERROR: ${VAR} points at the Unraid FUSE layer (${!VAR}). Aborting."
-        log "       Use /mnt/cache/... or /mnt/<pool-name>/... in ${CONFIG_FILE}."
-        notify_discord 15158332 "Plex DBRepair - Error" "Config path \`${VAR}\` uses the Unraid FUSE layer (\`/mnt/user/...\`). Switch to \`/mnt/cache/...\` or a pool path. Maintenance aborted." \
+        log "       Use /mnt/cache/... or /mnt/<pool-name>/... in .secrets and redeploy."
+        notify_discord 15158332 "Plex DBRepair - Error" "Config path \`${VAR}\` uses the Unraid FUSE layer (\`/mnt/user/...\`). Switch to \`/mnt/cache/...\` or a pool path in \`.secrets\` and redeploy. Maintenance aborted." \
             "Variable" "$VAR" \
             "Path" "${!VAR}"
         exit 1

@@ -110,24 +110,38 @@ Checks for active Plex streams before running [PlexDBRepair](https://github.com/
 6. Reports duration and result via Discord embed notification
 
 **Configuration:**
-Settings are loaded from `plex_dbrepair.conf` in the same directory (excluded from git via `.gitignore`). Copy `plex_dbrepair.conf.example` to `plex_dbrepair.conf` and fill in your values:
+Values are baked into the top of `script` at deploy time by `deploy.ps1`, which reads a local `.secrets` file (gitignored) and writes the result to the Unraid flash share over SMB. The repo copy of `script` ships with empty values; runtime validation aborts (and notifies Discord, when possible) if any value is still empty.
+
+To set up: copy `.secrets.example` to `.secrets` in the same directory and fill in real values:
 
 | Variable | Description |
 |----------|-------------|
 | `PLEX_CONTAINER` | Docker container name (e.g. `plex`) |
 | `PLEX_TOKEN` | Plex authentication token |
 | `PLEX_PORT` | Plex port (default: `32400`) |
-| `DBREPAIR_HOST_PATH` | Host path to download `DBRepair.sh` to |
+| `DBREPAIR_HOST_PATH` | Host path to download `DBRepair.sh` to (use `/mnt/cache/...`, not `/mnt/user/...`, to bypass the Unraid FUSE layer) |
 | `DBREPAIR_CONTAINER_PATH` | Path inside the container to copy `DBRepair.sh` |
 | `DBREPAIR_URL` | GitHub release URL for `DBRepair.sh` |
-| `LOG_FILE` | Path for the local log file |
-| `DISCORD_WEBHOOK` | Discord webhook URL for notifications |
+| `LOG_FILE` | Path for the host log file (also bypass FUSE) |
+| `DISCORD_WEBHOOK` | Discord webhook URL for notifications (leave empty to disable) |
+
+**Deploy:**
+```powershell
+# Preview only
+./deploy.ps1 -DryRun
+
+# Deploy to defaults (\\Tower\flash\config\plugins\user.scripts\scripts\PlexDBRepair\script)
+./deploy.ps1
+
+# Override target
+./deploy.ps1 -Server 192.168.1.50 -Share flash
+```
 
 **Install Path (Unraid):**
 ```
 /boot/config/plugins/user.scripts/scripts/PlexDBRepair/script
-/boot/config/plugins/user.scripts/scripts/PlexDBRepair/plex_dbrepair.conf
 ```
+Only `script` is deployed — there is no separate config file on the server.
 
 **Requirements:**
 - Unraid with CA User Scripts plugin

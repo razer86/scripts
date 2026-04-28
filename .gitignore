@@ -2,6 +2,7 @@
 *.env
 *.conf
 *.psd1
+.secrets
 
 # === Output files ===
 *.csv

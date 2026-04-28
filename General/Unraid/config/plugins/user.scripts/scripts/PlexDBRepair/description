@@ -1,0 +1,26 @@
+Weekly Plex Media Server database maintenance using DBRepair
+(https://github.com/ChuckPa/DBRepair).
+
+Checks for active streams before proceeding. If any are detected,
+sends a yellow "Skipped" Discord embed and exits. Otherwise downloads
+the latest DBRepair from GitHub, copies it into the Plex Docker
+container, and runs an automatic Stop > Check > Repair > Reindex >
+Start cycle.
+
+Logs:
+  Host:      /mnt/cache/appdata/PlexMediaServer/dbrepair_schedule.log
+  Container: /config/DBRepair.log
+
+Discord embeds:
+  green  = success
+  yellow = skipped (active streams)
+  red    = error
+
+Configuration values are baked into the top of this script at deploy
+time by deploy.ps1 in the repo, which reads a local .secrets file and
+writes the result here over SMB. Edit .secrets and rerun deploy.ps1
+to change settings — do NOT edit this script in-place via the User
+Scripts UI, as the next deploy will overwrite your edits.
+
+Recommended schedule: Weekly, low-traffic window
+(e.g. 0 3 * * 0 for Sunday 3am).
