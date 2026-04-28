@@ -2,7 +2,7 @@
 # =============================================================================
 # Script  : plex_dbrepair.sh
 # Author  : Raymond Slater
-# Version : 1.6.0
+# Version : 1.7.0
 # Created : 2026-03-23
 # Repository: https://github.com/razer86/scripts
 # =============================================================================
@@ -31,14 +31,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 source "$CONFIG_FILE"
-
-# ===   Validate required config values
-for VAR in PLEX_CONTAINER PLEX_TOKEN PLEX_PORT DBREPAIR_HOST_PATH DBREPAIR_CONTAINER_PATH DBREPAIR_URL LOG_FILE; do
-    if [ -z "${!VAR}" ]; then
-        echo "ERROR: Required config variable '${VAR}' is not set in ${CONFIG_FILE}. Aborting."
-        exit 1
-    fi
-done
 
 if [ -z "$DISCORD_WEBHOOK" ]; then
     echo "INFO: DISCORD_WEBHOOK is not set. Discord notifications will be disabled."
@@ -141,9 +133,32 @@ run_dbrepair() {
 # ===   MAIN   ===
 # =========================================
 
+# ===   Validate required config values (echo, not log — LOG_FILE may be the missing one)
+for VAR in PLEX_CONTAINER PLEX_TOKEN PLEX_PORT DBREPAIR_HOST_PATH DBREPAIR_CONTAINER_PATH DBREPAIR_URL LOG_FILE; do
+    if [ -z "${!VAR}" ]; then
+        echo "ERROR: Required config variable '${VAR}' is not set in ${CONFIG_FILE}. Aborting."
+        notify_discord 15158332 "Plex DBRepair - Error" "Required config variable \`${VAR}\` is not set in \`${CONFIG_FILE}\`. Maintenance aborted." \
+            "Variable" "$VAR"
+        exit 1
+    fi
+done
+
 log "============================================================"
 log "Plex DBRepair weekly maintenance starting"
 START_TIME=$(date +%s)
+
+# ===   Reject FUSE paths — /mnt/user/ goes through shfs and is slower than
+# direct cache/pool access. Use /mnt/cache/... or /mnt/<pool-name>/... instead.
+for VAR in DBREPAIR_HOST_PATH LOG_FILE; do
+    if [[ "${!VAR}" == /mnt/user/* ]]; then
+        log "ERROR: ${VAR} points at the Unraid FUSE layer (${!VAR}). Aborting."
+        log "       Use /mnt/cache/... or /mnt/<pool-name>/... in ${CONFIG_FILE}."
+        notify_discord 15158332 "Plex DBRepair - Error" "Config path \`${VAR}\` uses the Unraid FUSE layer (\`/mnt/user/...\`). Switch to \`/mnt/cache/...\` or a pool path. Maintenance aborted." \
+            "Variable" "$VAR" \
+            "Path" "${!VAR}"
+        exit 1
+    fi
+done
 
 # ===   Verify Docker is available
 if ! command -v docker &>/dev/null; then
