@@ -8,12 +8,13 @@ PowerShell automation scripts for Windows administration, Microsoft 365, Azure, 
 
 Use the aliases below to quickly run common admin tasks via `irm | iex` in PowerShell.
 
-| Alias        | Script                         | Description                                                |
-|--------------|--------------------------------|------------------------------------------------------------|
-| `/speedtest` | `Run-Speedtest.ps1`            | Run and auto-update the latest Ookla Speedtest CLI.        |
-| `/addwifi`   | `Add-WirelessNetwork.ps1`      | Add a Wi-Fi profile using SSID and password.               |
-| `/reckonfw`  | `Configure-ReckonFirewall.ps1` | Add/remove firewall rules for Reckon Accounts.             |
-| `/ods`       | `Check-OneDriveSyncHealth.ps1` | Check synced OneDrive file count and flag if over 280k.    |
+| Alias        | Script                            | Description                                                |
+|--------------|-----------------------------------|------------------------------------------------------------|
+| `/speedtest` | `Run-Speedtest.ps1`               | Run and auto-update the latest Ookla Speedtest CLI.        |
+| `/addwifi`   | `Add-WirelessNetwork.ps1`         | Add a Wi-Fi profile using SSID and password.               |
+| `/reckonfw`  | `Configure-ReckonFirewall.ps1`    | Add/remove firewall rules for Reckon Accounts.             |
+| `/ods`       | `Check-OneDriveSyncHealth.ps1`    | Check synced OneDrive file count and flag if over 280k.    |
+| `/kfm`       | `Intune/Set-OneDriveConfig.ps1`   | Apply OneDrive KFM and sync policies (requires `$TenantID`). |
 
 ### Usage Examples
 
@@ -29,6 +30,9 @@ irm https://ps.cqts.com.au/reckonfw | iex
 
 # Check OneDrive sync health
 irm https://ps.cqts.com.au/ods | iex
+
+# Apply OneDrive KFM / sync policies (TenantID must be set first)
+$TenantID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'; iex (irm https://ps.cqts.com.au/kfm)
 ```
 
 ---
@@ -94,7 +98,29 @@ General Windows system administration and troubleshooting utilities.
 | `Fix-OutlookIMAPFolders.ps1` | Converts Outlook IMAP folders (IPF.Imap) to standard folders (IPF.Note) |
 | `Get-LastBootReason.ps1` | Determines last boot time and classifies shutdown reason (planned, unexpected, crash, etc.) |
 | `Run-Speedtest.ps1` | Downloads and runs latest Ookla Speedtest CLI, auto-updates if outdated |
+| `Test-PantherMonitorSize.ps1` | Detects oversized `C:\Windows\Panther\monitor` folder and remediates leftover `WinSetupMon` driver auto-start (designed for RMM/Intune detection) |
 | `Test-SMTPAuthentication.ps1` | Tests SMTP authentication against mail servers (supports STARTTLS, SSL) |
+
+### Intune Deployment
+
+Scripts for applying Intune-style policies to devices, suitable for direct execution, RMM, or `irm | iex` delivery.
+
+| Script | Description |
+| ------ | ----------- |
+| `Intune/Set-OneDriveConfig.ps1` | Applies OneDrive ADMX policies under `HKLM:\SOFTWARE\Policies\Microsoft\OneDrive` (Silent SSO, KFM for Desktop/Documents/Pictures, Files On-Demand, Sync Admin Reports, PST sync block) and restarts OneDrive in user context (skipped when running as SYSTEM) |
+
+**Usage:**
+
+```powershell
+# Direct invocation
+.\Intune\Set-OneDriveConfig.ps1 -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+
+# Via irm | iex (set TenantID first)
+$TenantID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+iex (irm 'https://your-host/Set-OneDriveConfig.ps1')
+```
+
+**Requirements:** Must run as Administrator. Tenant ID is mandatory.
 
 ---
 

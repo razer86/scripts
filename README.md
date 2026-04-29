@@ -16,6 +16,7 @@ Several scripts are available via web shortcuts at `ps.cqts.com.au`:
 - `/addwifi` - Wireless network configuration
 - `/reckonfw` - Reckon Accounts firewall rules
 - `/ods` - OneDrive sync health checker
+- `/kfm` - OneDrive KFM / policy deployment
 
 ---
 
@@ -26,9 +27,8 @@ Scripts and tools for Microsoft Intune device management, configuration, and aut
 See [`Intune/README.md`](Intune/README.md) for overview and deployment instructions.
 
 **Available Content:**
-- Proactive Remediations (HP Bloatware Removal, OneDrive Configuration)
-- Device configuration scripts
-- Compliance and reporting utilities
+- Proactive Remediations (HP Bloatware Removal, OneDrive Timer AutoMount) — see [`Intune/Remediations/README.md`](Intune/Remediations/README.md)
+- OneDrive policy deployment script (`Powershell/Intune/Set-OneDriveConfig.ps1`) for applying KFM, Files On-Demand, Sync Admin Reports, and PST sync block via direct execution or `irm | iex`
 
 ---
 
@@ -54,7 +54,8 @@ See [`General/README.md`](General/README.md) for details.
 
 **Available Tools:**
 - Firefox Profile Sorter (Python)
-- Unraid: Plex DBRepair weekly maintenance (Bash, CA User Scripts)
+- Unraid: Plex DBRepair weekly maintenance (Bash, CA User Scripts) with PowerShell deploy script and `.secrets`-based config injection
+- Unraid: Tautulli → Radarr cleanup script (Python) — removes stale Radarr entries when matching files appear in Plex
 
 ---
 
