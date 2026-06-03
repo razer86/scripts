@@ -3,11 +3,16 @@
     Adds a Wi-Fi profile for WPA2-PSK networks using SSID and password.
 
 .DESCRIPTION
-    Supports direct use via PowerShell or one-liner remote execution via `irm | iex`.
-    Accepts SSID and PSK as command-line arguments ($args[0], $args[1]).
+    Supports direct use via PowerShell or one-liner remote execution.
+    Accepts SSID and PSK as positional parameters or via $args[0] and $args[1].
 
 .EXAMPLE
-    irm https://ps.cqts.com.au/addwifi | iex -- "MySSID" "MyPassword"
+    # Remote execution (recommended)
+    & ([scriptblock]::Create((irm https://ps.cqts.com.au/addwifi))) "MySSID" "MyPassword"
+
+.EXAMPLE
+    # Local execution
+    .\Add-WirelessNetwork.ps1 -SSID "MySSID" -PSK "MyPassword"
 
 .NOTES
 	Author: Raymond Slater
@@ -21,7 +26,7 @@ param (
 )
 
 if (-not $SSID -or -not $PSK) {
-    Write-Error "Usage: irm https://ps.cqts.com.au/addwifi | iex -- <SSID> <Password>"
+    Write-Error 'Usage: & ([scriptblock]::Create((irm https://ps.cqts.com.au/addwifi))) "MySSID" "MyPassword"'
     return
 }
 
