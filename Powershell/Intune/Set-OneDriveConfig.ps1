@@ -3,16 +3,6 @@
 .SYNOPSIS
     Applies OneDrive configuration policies to a device.
 
-    USAGE - Direct with parameter:
-      .\Set-OneDriveConfig.ps1 -TenantID "your-tenant-id"
-
-    USAGE - Via irm | iex (pre-set TenantID before piping):
-      $TenantID = "your-tenant-id"; Invoke-Expression (Invoke-RestMethod "https://your-url/Set-OneDriveConfig.ps1")
-
-    The tenant ID can be found in:
-      - Intune Admin Center > Tenant administration > Properties
-      - Azure AD Portal > Overview
-
 .DESCRIPTION
     Sets the following OneDrive policies under HKLM:\SOFTWARE\Policies\Microsoft\OneDrive:
       - Silent Account Config (SSO sign-in)
@@ -22,11 +12,25 @@
       - Sync Admin Reports
       - PST file sync block
 
+    The Tenant ID can be found in:
+      - Intune Admin Center > Tenant administration > Properties
+      - Azure AD Portal > Overview
+
 .PARAMETER TenantID
     The Azure AD / Intune Tenant ID for the customer. Required.
 
+.EXAMPLE
+    # Remote execution (recommended)
+    & ([scriptblock]::Create((irm https://ps.cqts.com.au/kfm))) -TenantID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+.EXAMPLE
+    # Local execution
+    .\Set-OneDriveConfig.ps1 -TenantID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
 .NOTES
     Must be run as Administrator.
+    Author: Raymond Slater
+    URL: https://ps.cqts.com.au/kfm
 #>
 param(
     [string]$TenantID = $TenantID  # Falls back to $TenantID if pre-set in session (irm | iex usage)
@@ -90,7 +94,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 if ([string]::IsNullOrWhiteSpace($TenantID)) {
     Write-Status "No TenantID provided. Use -TenantID parameter or pre-set TenantID before invoking." "ERROR"
     Write-Status "Example: .\Set-OneDriveConfig.ps1 -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'" "ERROR"
-    Write-Status "Example: TenantID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'; iex (irm 'https://your-url/Set-OneDriveConfig.ps1')" "ERROR"
+    Write-Status 'Example: & ([scriptblock]::Create((irm https://ps.cqts.com.au/kfm))) -TenantID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"' "ERROR"
     exit 1
 }
 
