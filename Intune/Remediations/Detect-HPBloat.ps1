@@ -35,6 +35,7 @@ $UninstallPrograms = @(
     "HP Sure Recover"
     "HP Sure Sense"
     "HP Sure Sense Installer"
+    "HP Support Assistant"
 )
 
 $HPidentifier = "AD2F1837"

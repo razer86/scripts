@@ -129,6 +129,35 @@ CSV file with columns:
 
 ---
 
+### Get-MailboxReport.ps1
+
+Generates a comprehensive tenant mailbox summary report for handover to a new admin.
+
+**Synopsis:**
+Collects user mailboxes, shared mailboxes, distribution groups, forwarding configuration, and delegated access across the tenant. Outputs a self-contained HTML report plus individual CSVs.
+
+**Parameters:**
+- `-OutputDir` - Folder to write output into (default: `.\MailboxReport_<timestamp>`)
+- `-SkipInboxRules` - Skip per-mailbox inbox rule scan (recommended on large tenants)
+
+**Usage:**
+```powershell
+# Generate report with default output directory
+.\Get-MailboxReport.ps1
+
+# Skip inbox rules scan and save to a specific folder
+.\Get-MailboxReport.ps1 -OutputDir "C:\Reports\Contoso" -SkipInboxRules
+```
+
+**Outputs:**
+- `MailboxReport.html` — self-contained report with expandable sections
+- `UserMailboxes.csv`, `SharedMailboxes.csv`, `DistributionGroups.csv`, `Forwarding.csv`, `DelegatedAccess.csv`
+
+**Requirements:**
+- ExchangeOnlineManagement module only
+
+---
+
 ### Get-MailboxAccessByUser.ps1
 
 Shows all mailboxes where a specific user has delegated access.

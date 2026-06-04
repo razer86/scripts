@@ -5,6 +5,10 @@
     Raymond Slater
 .VERSION
     1.0 - 2025-06-27
+.EXAMPLE
+    # Find all mailboxes where a user has delegated access
+    .\Get-MailboxAccessByUser.ps1 -UPN delegateuser@contoso.com
+
 .LINK
     https://github.com/razer86/scripts
 #>

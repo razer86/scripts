@@ -17,6 +17,14 @@
     1.1 - 2025-09-18
         - Initial user-centric pivot version.
 
+.EXAMPLE
+    # Generate report with default output path
+    .\Get-AllMailboxPermissions.ps1
+
+.EXAMPLE
+    # Resolve trustee names to UPN and save to a custom path
+    .\Get-AllMailboxPermissions.ps1 -ResolveTrusteesToUPN -OutputPath "C:\Reports\Permissions.csv"
+
 .NOTES
     - Requires Exchange Online PowerShell module (Connect-ExchangeOnline).
 

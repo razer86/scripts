@@ -6,6 +6,14 @@
     After importing Outlook folders from an IMAP profile, the folder type will still be IPF.Imap.
     This script lists all such folders and optionally updates them to IPF.Note (standard Outlook folders).
     Requires Outlook to be open and the desired mailbox/folder selected in the explorer.
+
+.EXAMPLE
+    # List all IPF.Imap folders without making changes
+    .\Fix-OutlookIMAPFolders.ps1 -ListOnly
+
+.EXAMPLE
+    # Convert all IPF.Imap folders to IPF.Note
+    .\Fix-OutlookIMAPFolders.ps1
 #>
 
 param (

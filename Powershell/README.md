@@ -53,6 +53,7 @@ See [`Exchange Online/README.md`](Exchange%20Online/README.md) for detailed docu
 | `Enable-ExchOnlineArchive.ps1` | Scans all mailboxes, reports licensing via Graph, and auto-enables archives for mailboxes with < 25% free space |
 | `Get-AllMailboxPermissions.ps1` | Generates user-centric delegated permissions report (FullAccess, SendAs, SendOnBehalf) |
 | `Get-MailboxAccessByUser.ps1` | Shows all mailboxes where a specific user has delegated access |
+| `Get-MailboxReport.ps1` | Generates a full tenant mailbox summary report (HTML + CSVs) for admin handover |
 
 ### Azure Management
 
@@ -102,6 +103,32 @@ General Windows system administration and troubleshooting utilities.
 | `Run-Speedtest.ps1` | Downloads and runs latest Ookla Speedtest CLI, auto-updates if outdated |
 | `Test-PantherMonitorSize.ps1` | Detects oversized `C:\Windows\Panther\monitor` folder and remediates leftover `WinSetupMon` driver auto-start (designed for RMM/Intune detection) |
 | `Test-SMTPAuthentication.ps1` | Tests SMTP authentication against mail servers (supports STARTTLS, SSL) |
+
+### Outlook Archive Automation
+
+Scripts for automatically routing Outlook inbox emails into folders based on sender domain or rc+ address mappings.
+
+| Script | Description |
+| ------ | ----------- |
+| `OutlookArchive/Invoke-InboxArchive.ps1` | Moves inbox emails into subfolders mapped by sender domain |
+| `OutlookArchive/Invoke-RCInboxArchive.ps1` | Archives rc@neconnect.com.au inbox emails using rc+tag address mappings |
+| `OutlookArchive/Add-DomainMappings.ps1` | Reads `UnmappedDomains.csv` and creates the corresponding Outlook folders |
+| `OutlookArchive/Get-InboxUnmappedDomains.ps1` | Scans inbox for sender domains not yet mapped to a folder |
+| `OutlookArchive/Get-RCInboxMappings.ps1` | Discovers rc+tag address mappings from existing Outlook folders |
+| `OutlookArchive/Get-OutlookFolders.ps1` | Lists all folders in a mailbox store |
+| `OutlookArchive/Get-OutlookStores.ps1` | Lists all accounts/stores currently open in Outlook |
+| `OutlookArchive/Get-SenderDiagnostics.ps1` | Samples skipped inbox items to help diagnose mapping gaps |
+| `OutlookArchive/Test-RCAddressResolution.ps1` | Tests rc+ address resolution against the configured mappings |
+
+---
+
+### Migration
+
+| Script | Description |
+| ------ | ----------- |
+| `Migration/Move-SharedFolder.ps1` | End-to-end shared folder migration: Robocopy with retries, ACL backup/restore, and junction point creation at the old path |
+
+---
 
 ### Intune Deployment
 

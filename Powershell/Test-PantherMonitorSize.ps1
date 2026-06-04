@@ -1,7 +1,30 @@
-# Test-PantherMonitorSize.ps1
-# Detects oversized Panther\monitor and remediates leftover WinSetupMon auto-start
-# Author: Raymond Slater
-# Version: 1.0
+<#
+.SYNOPSIS
+    Detects and remediates an oversized C:\Windows\Panther\monitor folder.
+
+.DESCRIPTION
+    Checks the size of C:\Windows\Panther\monitor against a 1 GB threshold.
+    If over threshold, unloads the WinSetupMon filter driver, removes its log files,
+    and sets the driver start type to demand so it no longer auto-starts.
+
+    Returns a PSCustomObject with: ComputerName, SizeBeforeGB, FileCount,
+    DriverState, StartType, Action, SizeAfterGB.
+
+    Designed for use as an RMM or Intune detection/remediation script.
+
+.EXAMPLE
+    # Run interactively and inspect the result
+    .\Test-PantherMonitorSize.ps1
+
+.EXAMPLE
+    # Use in an RMM script to flag non-compliant devices
+    $result = .\Test-PantherMonitorSize.ps1
+    if ($result.Action -eq 'Remediated') { Write-Host "$($result.ComputerName) remediated: was $($result.SizeBeforeGB) GB" }
+
+.NOTES
+    Author: Raymond Slater
+    Version: 1.0
+#>
 
 $MonitorPath = 'C:\Windows\Panther\monitor'
 $ThresholdGB = 1

@@ -6,10 +6,10 @@ $Value = 1
 Try {
     $Registry = Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop | Select-Object -ExpandProperty $Name
     If ($Registry -eq $Value){
-        Write-Output "Timer Automount Set to zero"
+        Write-Output "Timer Automount configured correctly (value: 1)"
         Exit 0
-    } 
-    Write-Warning "Timer Automount Not configured to zero"
+    }
+    Write-Warning "Timer Automount not configured correctly"
     Exit 1
 } 
 Catch {
