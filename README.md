@@ -28,7 +28,7 @@ See [`Intune/README.md`](Intune/README.md) for overview and deployment instructi
 
 **Available Content:**
 - Proactive Remediations (HP Bloatware Removal, OneDrive Timer AutoMount) — see [`Intune/Remediations/README.md`](Intune/Remediations/README.md)
-- OneDrive policy deployment script (`Powershell/Intune/Set-OneDriveConfig.ps1`) for applying KFM, Files On-Demand, Sync Admin Reports, and PST sync block via direct execution or `irm | iex`
+- OneDrive policy deployment script (`Powershell/Intune/Set-OneDriveConfig.ps1`) for applying KFM, Files On-Demand, Sync Admin Reports, and PST sync block via direct or remote scriptblock execution (`ps.cqts.com.au/kfm`)
 
 ---
 

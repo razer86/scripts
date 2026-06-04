@@ -6,7 +6,9 @@ PowerShell automation scripts for Windows administration, Microsoft 365, Azure, 
 
 ## Quick Access via Web Shortcuts
 
-Use the aliases below to quickly run common admin tasks via `irm | iex` in PowerShell.
+Use the aliases below to quickly run common admin tasks from PowerShell.
+
+> Scripts that take no arguments use `irm | iex`. Scripts that require arguments use the scriptblock pattern so parameters can be passed directly.
 
 | Alias        | Script                            | Description                                                |
 |--------------|-----------------------------------|------------------------------------------------------------|
@@ -14,7 +16,7 @@ Use the aliases below to quickly run common admin tasks via `irm | iex` in Power
 | `/addwifi`   | `Add-WirelessNetwork.ps1`         | Add a Wi-Fi profile using SSID and password.               |
 | `/reckonfw`  | `Configure-ReckonFirewall.ps1`    | Add/remove firewall rules for Reckon Accounts.             |
 | `/ods`       | `Check-OneDriveSyncHealth.ps1`    | Check synced OneDrive file count and flag if over 280k.    |
-| `/kfm`       | `Intune/Set-OneDriveConfig.ps1`   | Apply OneDrive KFM and sync policies (requires `$TenantID`). |
+| `/kfm`       | `Intune/Set-OneDriveConfig.ps1`   | Apply OneDrive KFM and sync policies (requires `-TenantID`). |
 
 ### Usage Examples
 
@@ -22,8 +24,8 @@ Use the aliases below to quickly run common admin tasks via `irm | iex` in Power
 # Speedtest CLI
 irm https://ps.cqts.com.au/speedtest | iex
 
-# Add a wireless profile
-irm https://ps.cqts.com.au/addwifi | iex
+# Add a wireless profile (SSID and password passed as arguments)
+& ([scriptblock]::Create((irm https://ps.cqts.com.au/addwifi))) "MySSID" "MyPassword"
 
 # Configure firewall rules for Reckon Accounts
 irm https://ps.cqts.com.au/reckonfw | iex
@@ -31,8 +33,8 @@ irm https://ps.cqts.com.au/reckonfw | iex
 # Check OneDrive sync health
 irm https://ps.cqts.com.au/ods | iex
 
-# Apply OneDrive KFM / sync policies (TenantID must be set first)
-$TenantID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'; iex (irm https://ps.cqts.com.au/kfm)
+# Apply OneDrive KFM / sync policies
+& ([scriptblock]::Create((irm https://ps.cqts.com.au/kfm))) -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 ```
 
 ---
@@ -103,7 +105,7 @@ General Windows system administration and troubleshooting utilities.
 
 ### Intune Deployment
 
-Scripts for applying Intune-style policies to devices, suitable for direct execution, RMM, or `irm | iex` delivery.
+Scripts for applying Intune-style policies to devices, suitable for direct execution, RMM, or remote scriptblock delivery.
 
 | Script | Description |
 | ------ | ----------- |
@@ -112,12 +114,11 @@ Scripts for applying Intune-style policies to devices, suitable for direct execu
 **Usage:**
 
 ```powershell
-# Direct invocation
-.\Intune\Set-OneDriveConfig.ps1 -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+# Remote execution
+& ([scriptblock]::Create((irm https://ps.cqts.com.au/kfm))) -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 
-# Via irm | iex (set TenantID first)
-$TenantID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
-iex (irm 'https://your-host/Set-OneDriveConfig.ps1')
+# Local execution
+.\Intune\Set-OneDriveConfig.ps1 -TenantID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 ```
 
 **Requirements:** Must run as Administrator. Tenant ID is mandatory.
