@@ -106,7 +106,8 @@ Write-Host ""
 Write-StepHeader 2 2 "Rename computer"
 try {
     $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber.Trim()
-    $newName = "LJHBTLPT-$($serial.Substring($serial.Length - 4))"
+    $serialShort = $serial.Substring($serial.Length - 4)
+    $newName = 'LJHBTLPT-' + $serialShort
     if ($env:COMPUTERNAME -eq $newName) {
         Write-OK "Already named $newName - skipping"
     } else {
@@ -126,39 +127,8 @@ Write-Host ""
 
 Write-Section "Software Installation"
 
-# -- Atera --
-Write-StepHeader 1 4 "Atera Agent"
-try {
-    $ateraExe = Join-Path $tempDir "AteraAgent.exe"
-    Invoke-Download 'https://NQBE184848.servicedesk.atera.com/api/utils/agent-install/windows/?cid=384&aeid=2d04f0af12544f838df2c7b5fa3dbca2' $ateraExe
-    $proc = Start-Process -FilePath $ateraExe -ArgumentList "/silent" -Wait -PassThru
-    if ($proc.ExitCode -eq 0) { Write-OK } else { Write-Warn "Exit code $($proc.ExitCode) (may still be OK)" }
-} catch {
-    Write-Fail $_.Exception.Message
-    $failed += "Atera Agent"
-}
-Write-Host ""
-
-# -- ScreenConnect --
-Write-StepHeader 2 4 "ScreenConnect"
-try {
-    $scMsi = Join-Path $tempDir "ScreenConnect.msi"
-    Invoke-Download 'https://neconnect.screenconnect.com/Bin/ScreenConnect.ClientSetup.msi?e=Access&y=Guest&c=LJ%20Hooker%20Gladstone%2FBoyne&c=Boyne%20Tannum&c=&c=&c=CAPC&c=&c=&c=' $scMsi
-    $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $scMsi, '/qn', '/norestart') -Wait -PassThru
-    if ($proc.ExitCode -eq 0) {
-        Write-OK
-    } else {
-        Write-Fail ('msiexec exit code ' + $proc.ExitCode)
-        $failed += ('ScreenConnect (exit ' + $proc.ExitCode + ')')
-    }
-} catch {
-    Write-Fail $_.Exception.Message
-    $failed += "ScreenConnect"
-}
-Write-Host ""
-
 # -- Sophos --
-Write-StepHeader 3 4 "Sophos"
+Write-StepHeader 1 2 "Sophos"
 try {
     $sophosExe = Join-Path $tempDir "SophosSetup.exe"
     Invoke-Download "https://dzr-api-amzn-us-west-2-fa88.api-upe.p.hmr.sophos.com/api/download/e5bbb4e592523cccc8a66c58f2b68ec5/SophosSetup.exe" $sophosExe
@@ -171,7 +141,7 @@ try {
 Write-Host ""
 
 # -- Printer --
-Write-StepHeader 4 4 "Printer"
+Write-StepHeader 2 2 "Printer"
 $printerSetup = "F:\Drivers\Printer\setup.exe"
 if (Test-Path $printerSetup) {
     try {
