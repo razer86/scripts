@@ -130,7 +130,7 @@ Write-Section "Software Installation"
 Write-StepHeader 1 4 "Atera Agent"
 try {
     $ateraExe = Join-Path $tempDir "AteraAgent.exe"
-    Invoke-Download "https://NQBE184848.servicedesk.atera.com/api/utils/agent-install/windows/?cid=384&aeid=2d04f0af12544f838df2c7b5fa3dbca2" $ateraExe
+    Invoke-Download 'https://NQBE184848.servicedesk.atera.com/api/utils/agent-install/windows/?cid=384&aeid=2d04f0af12544f838df2c7b5fa3dbca2' $ateraExe
     $proc = Start-Process -FilePath $ateraExe -ArgumentList "/silent" -Wait -PassThru
     if ($proc.ExitCode -eq 0) { Write-OK } else { Write-Warn "Exit code $($proc.ExitCode) (may still be OK)" }
 } catch {
