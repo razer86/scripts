@@ -106,7 +106,7 @@ Write-Host ""
 Write-StepHeader 2 2 "Rename computer"
 try {
     $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber.Trim()
-    $newName = "LJHBTLPT-$serial"
+    $newName = "LJHBTLPT-$($serial.Substring($serial.Length - 4))"
     if ($env:COMPUTERNAME -eq $newName) {
         Write-OK "Already named $newName — skipping"
     } else {
