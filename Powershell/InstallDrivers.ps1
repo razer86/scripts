@@ -93,7 +93,7 @@ Write-Section "System Configuration"
 Write-StepHeader 1 2 "Configure time sync (time.google.com)"
 try {
     w32tm /config /manualpeerlist:time.google.com /syncfromflags:manual /reliable:YES /update | Out-Null
-    Restart-Service w32tm -Force
+    Restart-Service W32Time -Force
     w32tm /resync /force | Out-Null
     Write-OK "Time server set and synced"
 } catch {
