@@ -108,7 +108,7 @@ try {
     $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber.Trim()
     $newName = "LJHBTLPT-$($serial.Substring($serial.Length - 4))"
     if ($env:COMPUTERNAME -eq $newName) {
-        Write-OK "Already named $newName — skipping"
+        Write-OK "Already named $newName - skipping"
     } else {
         Rename-Computer -NewName $newName -Force -ErrorAction Stop
         Write-OK "Renamed to $newName (takes effect after reboot)"
@@ -182,7 +182,7 @@ if (Test-Path $printerSetup) {
         $failed += "Printer"
     }
 } else {
-    Write-Warn "Skipped — setup.exe not found at $printerSetup"
+    Write-Warn "Skipped - setup.exe not found at $printerSetup"
 }
 Write-Host ""
 
