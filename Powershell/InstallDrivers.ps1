@@ -77,8 +77,8 @@ for ($i = 0; $i -lt $driverTotal; $i++) {
 
     switch ($proc.ExitCode) {
         0      { Write-OK }
-        3010   { Write-Warn "OK (reboot required)"; $rebootRequired += $friendlyName }
-        default { Write-Fail "exit code $($proc.ExitCode)"; $failed += "Driver: $friendlyName (exit $($proc.ExitCode))" }
+        3010   { Write-Warn 'OK (reboot required)'; $rebootRequired += $friendlyName }
+        default { Write-Fail ('exit code ' + $proc.ExitCode); $failed += ('Driver: ' + $friendlyName + ' (exit ' + $proc.ExitCode + ')') }
     }
     Write-Host ""
 }
@@ -142,17 +142,22 @@ Write-Host ""
 
 # -- Printer --
 Write-StepHeader 2 2 "Printer"
-$printerSetup = "F:\Drivers\Printer\setup.exe"
+$printerSetup = 'F:\Drivers\Printer\setup.exe'
 if (Test-Path $printerSetup) {
     try {
-        $proc = Start-Process -FilePath $printerSetup -ArgumentList "/s" -Wait -PassThru
-        if ($proc.ExitCode -eq 0) { Write-OK } else { Write-Fail "exit code $($proc.ExitCode)"; $failed += "Printer (exit $($proc.ExitCode))" }
+        $proc = Start-Process -FilePath $printerSetup -ArgumentList '/s' -Wait -PassThru
+        if ($proc.ExitCode -eq 0) {
+            Write-OK
+        } else {
+            Write-Fail ('exit code ' + $proc.ExitCode)
+            $failed += ('Printer (exit ' + $proc.ExitCode + ')')
+        }
     } catch {
         Write-Fail $_.Exception.Message
-        $failed += "Printer"
+        $failed += 'Printer'
     }
 } else {
-    Write-Warn "Skipped - setup.exe not found at $printerSetup"
+    Write-Warn ('Skipped - setup.exe not found at ' + $printerSetup)
 }
 Write-Host ""
 
