@@ -144,7 +144,7 @@ Write-StepHeader 2 4 "ScreenConnect"
 try {
     $scMsi = Join-Path $tempDir "ScreenConnect.msi"
     Invoke-Download 'https://neconnect.screenconnect.com/Bin/ScreenConnect.ClientSetup.msi?e=Access&y=Guest&c=LJ%20Hooker%20Gladstone%2FBoyne&c=Boyne%20Tannum&c=&c=&c=CAPC&c=&c=&c=' $scMsi
-    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList ('/i "' + $scMsi + '" /qn /norestart') -Wait -PassThru
+    $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $scMsi, '/qn', '/norestart') -Wait -PassThru
     if ($proc.ExitCode -eq 0) {
         Write-OK
     } else {
