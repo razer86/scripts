@@ -86,7 +86,11 @@ function Get-LastBootReason {
 
     # --- Query recent shutdown/restart events ---
     $startTime = $bootLocal.AddMinutes(-1 * [math]::Abs($MinutesLookback))
-    $endTime   = $bootLocal
+    # Unexpected-shutdown events (6008, 41) are written at the *next* startup,
+    # so their timestamp is at/after LastBootUpTime. Extend the window forward
+    # past the boot to capture them, otherwise crashes/power-loss look like
+    # "NoEventFound".
+    $endTime   = $bootLocal.AddMinutes(10)
 
     try {
     $shutdownEvents = Get-WinEvent -FilterHashtable @{
