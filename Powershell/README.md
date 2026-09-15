@@ -130,6 +130,21 @@ Scripts for automatically routing Outlook inbox emails into folders based on sen
 
 ---
 
+### RDP Wrapper Monitor
+
+Monitors RDP Wrapper multi-session health, auto-stages `rdpwrap.ini` offsets after Windows Updates, and alerts via RMM event-log thresholds.
+
+See [`RDPWrap/README.md`](RDPWrap/README.md) for the pipeline, event IDs, deploy steps and runbooks.
+
+| Script | Description |
+| ------ | ----------- |
+| `RDPWrap/Test-RdpWrapStatus.ps1` | Health check: ServiceDll, DLL loaded, ini section for installed termsrv.dll, listener, policy flags; logs events 1000–1002 |
+| `RDPWrap/Repair-RdpWrapIni.ps1` | Adds a missing ini section from upstream or the offset finder; never restarts TermService unless asked; logs events 1003–1005 |
+| `RDPWrap/Build-Installer.ps1` | Generates the single-file `Install-RdpWrapMonitor.ps1` for RMM upload |
+| `RDPWrap/Build-OffsetFinder.ps1` | Builds a standalone `rdpwrap-offset-finder.exe` (PyInstaller) from bobotechnology/RDPWrapOffsetFinder |
+
+---
+
 ### Intune Deployment
 
 Scripts for applying Intune-style policies to devices, suitable for direct execution, RMM, or remote scriptblock delivery.

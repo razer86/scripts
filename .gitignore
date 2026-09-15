@@ -27,3 +27,5 @@ chromedriver*
 
 # === GitGuardian Cache ===
 *.cache_ggshield
+# === Built binaries (RDPWrap offset finder) ===
+Powershell/RDPWrap/dist/
