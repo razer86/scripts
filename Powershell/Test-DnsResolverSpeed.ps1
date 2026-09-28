@@ -12,12 +12,16 @@
     - Detects the DNS server(s) currently configured on every active network adapter, and labels
       each one with the interface it belongs to (Ethernet / Wi-Fi / Cellular) - useful on devices
       with multiple simultaneously-active connections (e.g. Wi-Fi + a 5G/mobile broadband adapter)
+    - Queries each resolver directly over a raw UDP socket rather than via Resolve-DnsName. This
+      avoids the Windows DNS client entirely, so there's no local cache to skew results, no need
+      to run elevated, and no dependency on a cmdlet that has been observed to take 9-13 seconds
+      per query under an elevated token on some systems (vs single-digit milliseconds unelevated)
     - Times resolution of a set of common domains against those resolvers and several well-known
       public resolvers (Cloudflare, Google, Quad9, OpenDNS by default)
     - Runs multiple queries per domain to get an average, min/max, and jitter (standard deviation)
-    - Enforces a hard per-query timeout and quickly probes each resolver first, so a completely
-      unreachable/firewalled resolver (common on carrier-NAT mobile broadband) fails fast instead
-      of hanging for minutes waiting out the OS resolver's own retry/timeout behaviour
+    - Enforces a hard per-query timeout via the socket itself and quickly probes each resolver
+      first, so a completely unreachable/firewalled resolver (common on carrier-NAT mobile
+      broadband) fails fast instead of dragging out the full domain x query-count matrix
     - Reports failure/timeout rates per resolver
     - Flags whether each current resolver looks meaningfully slower or less reliable than the
       public alternatives, which is useful evidence when raw bandwidth speed tests come back clean
@@ -35,19 +39,13 @@
     at the cost of a longer test. Default is 5.
 
 .PARAMETER TimeoutSeconds
-    Hard timeout applied to every individual DNS query. A query that doesn't complete within this
-    window is counted as a failure and abandoned rather than waiting on the OS resolver's own
-    (much longer) internal retry/timeout behaviour. Default is 2 seconds.
+    Hard timeout applied to every individual DNS query's socket. A query that doesn't get a
+    response within this window is counted as a failure. Default is 2 seconds.
 
 .PARAMETER ExcludeCurrentDns
     Skips auto-detecting and testing the currently configured system DNS server(s). By default the
     current resolver(s) on every active adapter are always included first so they can be compared
     against the public resolvers.
-
-.PARAMETER SkipCacheBust
-    Skips clearing the local DNS client cache between queries. Cache-busting requires an elevated
-    session; without it, repeat queries for the same name may return near-instantly from the local
-    cache regardless of which resolver actually answered, understating real-world latency.
 
 .PARAMETER ExportCsvPath
     Optional path to export the detailed per-domain, per-resolver results as CSV.
@@ -69,15 +67,15 @@
 .NOTES
     File Name      : Test-DnsResolverSpeed.ps1
     Author         : Raymond Slater
-    Prerequisite   : PowerShell 5.1 or later, DnsClient module (built into Windows 8/Server 2012+)
+    Prerequisite   : PowerShell 5.1 or later. Does not require an elevated session - DNS queries
+                     are sent directly over raw UDP sockets rather than through the OS resolver.
 
     Exit Codes:
     0 = Success
-    1 = Required module unavailable
     2 = Invalid parameters (e.g. malformed -Resolvers entry)
 
 .LINK
-    https://learn.microsoft.com/powershell/module/dnsclient/resolve-dnsname
+    https://learn.microsoft.com/windows-server/networking/dns/dns-top
 #>
 
 #Requires -Version 5.1
@@ -106,9 +104,6 @@ param(
     [switch]$ExcludeCurrentDns,
 
     [Parameter()]
-    [switch]$SkipCacheBust,
-
-    [Parameter()]
     [string]$ExportCsvPath
 )
 
@@ -123,19 +118,7 @@ $defaultPublicResolvers = [ordered]@{
     'OpenDNS'    = '208.67.222.222'
 }
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$canBustCache = $isAdmin -and -not $SkipCacheBust
 $timeoutMs = $TimeoutSeconds * 1000
-
-if (-not $isAdmin -and -not $SkipCacheBust) {
-    Write-Warning "Not running elevated - local DNS cache cannot be cleared between queries. Repeat lookups of the same name may read from cache and understate real latency. Run as Administrator for the most accurate results."
-}
-
-# Shared runspace pool used to enforce a hard timeout per DNS query (Resolve-DnsName has no
-# reliable built-in timeout - an unreachable/firewalled resolver can otherwise hang for the OS
-# resolver's own internal retry window, which is what made this test appear to "get stuck").
-$script:DnsRunspacePool = [runspacefactory]::CreateRunspacePool(1, 5)
-$script:DnsRunspacePool.Open()
 #EndRegion Configuration
 
 #Region Functions
@@ -213,10 +196,46 @@ function Get-CurrentDnsServers {
     return @($found | Sort-Object -Property ServerIP, InterfaceAlias -Unique)
 }
 
-function Invoke-DnsQueryWithTimeout {
+function New-DnsQueryPacket {
     <#
     .SYNOPSIS
-        Runs Resolve-DnsName on a pooled runspace with a hard wall-clock timeout.
+        Builds a raw DNS query packet (A record, class IN) for the given domain and transaction ID.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Domain,
+
+        [Parameter(Mandatory)]
+        [int]$TransactionId
+    )
+
+    $header = [byte[]](
+        [byte](($TransactionId -shr 8) -band 0xFF), [byte]($TransactionId -band 0xFF),
+        0x01, 0x00,  # flags: standard query, recursion desired
+        0x00, 0x01,  # QDCOUNT = 1
+        0x00, 0x00,  # ANCOUNT = 0
+        0x00, 0x00,  # NSCOUNT = 0
+        0x00, 0x00   # ARCOUNT = 0
+    )
+
+    $qname = [System.Collections.Generic.List[byte]]::new()
+    foreach ($label in $Domain.Split('.')) {
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($label)
+        $qname.Add([byte]$bytes.Length)
+        $qname.AddRange($bytes)
+    }
+    $qname.Add(0)  # root terminator
+
+    $qtypeAndClass = [byte[]](0x00, 0x01, 0x00, 0x01)  # QTYPE=A, QCLASS=IN
+
+    return $header + $qname.ToArray() + $qtypeAndClass
+}
+
+function Invoke-RawDnsQuery {
+    <#
+    .SYNOPSIS
+        Sends a DNS A-record query directly to a resolver over UDP and times the response.
 
     .OUTPUTS
         System.Double milliseconds elapsed on success, or $null on failure/timeout.
@@ -233,68 +252,59 @@ function Invoke-DnsQueryWithTimeout {
         [int]$TimeoutMs
     )
 
-    $ps = [powershell]::Create()
-    $ps.RunspacePool = $script:DnsRunspacePool
-    [void]$ps.AddScript({
-        param($Domain, $ServerIP)
-        Resolve-DnsName -Name $Domain -Server $ServerIP -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop
-    }).AddArgument($Domain).AddArgument($ServerIP)
+    $transactionId = Get-Random -Minimum 0 -Maximum 65535
+    $packet = New-DnsQueryPacket -Domain $Domain -TransactionId $transactionId
 
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $asyncResult = $ps.BeginInvoke()
-    $completed = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMs)
-    $sw.Stop()
-
+    $udp = $null
     try {
-        if (-not $completed) {
-            Write-Verbose "Query for $Domain via $ServerIP timed out after ${TimeoutMs}ms"
-            try { $ps.Stop() } catch { Write-Verbose "Failed to stop timed-out runspace: $_" }
+        $udp = New-Object System.Net.Sockets.UdpClient
+        $udp.Client.ReceiveTimeout = $TimeoutMs
+        $udp.Client.SendTimeout = $TimeoutMs
+        $udp.Connect($ServerIP, 53)
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        [void]$udp.Send($packet, $packet.Length)
+
+        $remoteEP = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+        $response = $udp.Receive([ref]$remoteEP)
+        $sw.Stop()
+
+        if ($response.Length -lt 4) {
+            Write-Verbose "Query for $Domain via $ServerIP got a malformed (too short) response"
             return $null
         }
 
-        $null = $ps.EndInvoke($asyncResult)
-        if ($ps.HadErrors) {
-            $errMsg = ($ps.Streams.Error | Select-Object -First 1).ToString()
-            Write-Verbose "Query for $Domain via $ServerIP failed: $errMsg"
+        # PowerShell's -shl/-shr preserve the operand's own type, so shifting a [byte] element
+        # from the response array overflows/truncates silently (e.g. 154 -shl 8 wraps to 0
+        # instead of promoting to int) - cast to [int] first or the high byte is lost.
+        $responseId = ([int]$response[0] -shl 8) -bor $response[1]
+        if ($responseId -ne $transactionId) {
+            Write-Verbose "Query for $Domain via $ServerIP got a response with a mismatched transaction ID"
             return $null
         }
 
+        $flags = ([int]$response[2] -shl 8) -bor $response[3]
+        $isResponse = ($flags -shr 15) -band 0x1
+        if ($isResponse -ne 1) {
+            Write-Verbose "Query for $Domain via $ServerIP got a non-response packet"
+            return $null
+        }
+
+        # Any well-formed response (including NXDOMAIN) shows the resolver is up and answering -
+        # that's what this test cares about, not whether the domain itself resolves successfully.
         return $sw.Elapsed.TotalMilliseconds
+    }
+    catch [System.Net.Sockets.SocketException] {
+        Write-Verbose "Query for $Domain via $ServerIP timed out or failed: $($_.Exception.Message)"
+        return $null
     }
     catch {
         Write-Verbose "Query for $Domain via $ServerIP failed: $_"
         return $null
     }
     finally {
-        $ps.Dispose()
+        if ($udp) { $udp.Close() }
     }
-}
-
-function Measure-DnsQuery {
-    <#
-    .SYNOPSIS
-        Times a single DNS resolution against a specific server. Returns elapsed milliseconds, or $null on failure.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$Domain,
-
-        [Parameter(Mandatory)]
-        [string]$ServerIP,
-
-        [Parameter()]
-        [bool]$BustCache,
-
-        [Parameter(Mandatory)]
-        [int]$TimeoutMs
-    )
-
-    if ($BustCache) {
-        try { Clear-DnsClientCache -ErrorAction Stop } catch { Write-Verbose "Cache clear failed: $_" }
-    }
-
-    return Invoke-DnsQueryWithTimeout -Domain $Domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
 }
 
 function Test-ResolverReachable {
@@ -302,7 +312,7 @@ function Test-ResolverReachable {
     .SYNOPSIS
         Quickly probes a resolver with up to two lookups before committing to the full test matrix,
         so a dead/firewalled resolver (e.g. an internal carrier-NAT address on a mobile broadband
-        adapter) is skipped in seconds instead of hanging through the full domain x query-count matrix.
+        adapter) is skipped in seconds instead of dragging out the full domain x query-count matrix.
     #>
     [CmdletBinding()]
     param(
@@ -317,7 +327,7 @@ function Test-ResolverReachable {
     )
 
     foreach ($domain in $ProbeDomains) {
-        $ms = Invoke-DnsQueryWithTimeout -Domain $domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
+        $ms = Invoke-RawDnsQuery -Domain $domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
         if ($null -ne $ms) { return $true }
     }
 
@@ -342,9 +352,6 @@ function Test-DnsResolver {
 
         [Parameter(Mandatory)]
         [int]$Count,
-
-        [Parameter(Mandatory)]
-        [bool]$BustCache,
 
         [Parameter(Mandatory)]
         [int]$TimeoutMs
@@ -377,7 +384,7 @@ function Test-DnsResolver {
         $failures = 0
 
         for ($i = 0; $i -lt $Count; $i++) {
-            $ms = Measure-DnsQuery -Domain $domain -ServerIP $ServerIP -BustCache $BustCache -TimeoutMs $TimeoutMs
+            $ms = Invoke-RawDnsQuery -Domain $domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
             if ($null -ne $ms) {
                 $samples.Add($ms)
             } else {
@@ -413,11 +420,6 @@ function Get-StdDev {
 
 #Region Main Execution
 try {
-    if (-not (Get-Module -ListAvailable -Name DnsClient)) {
-        Write-Error "The DnsClient module (Resolve-DnsName) is not available on this system. This script requires Windows 8/Server 2012 or later."
-        exit 1
-    }
-
     # Build the ordered list of resolvers to test: Name -> { IP, Interface }
     $resolverMap = [ordered]@{}
 
@@ -463,7 +465,7 @@ try {
     Write-ColorOutput "DNS Resolver Speed Test" -ForegroundColor Cyan
     Write-ColorOutput "Resolvers under test: $(($resolverMap.Keys | ForEach-Object { "$_ ($($resolverMap[$_].ServerIP))" }) -join ', ')" -ForegroundColor Gray
     Write-ColorOutput "Domains: $($Domains -join ', ')" -ForegroundColor Gray
-    Write-ColorOutput "Queries per domain: $QueryCount | Timeout: ${TimeoutSeconds}s | Cache-busting: $(if ($canBustCache) { 'enabled' } else { 'disabled' })" -ForegroundColor Gray
+    Write-ColorOutput "Queries per domain: $QueryCount | Timeout: ${TimeoutSeconds}s" -ForegroundColor Gray
     Write-Host ""
 
     $allDetailResults = [System.Collections.Generic.List[object]]::new()
@@ -474,7 +476,7 @@ try {
         $iface = $resolverMap[$name].InterfaceAlias
         Write-ColorOutput "Testing $name ($ip)$(if ($iface) { " via $iface" })..." -ForegroundColor Yellow
 
-        $detail = @(Test-DnsResolver -ResolverName $name -ServerIP $ip -DomainList $Domains -Count $QueryCount -BustCache $canBustCache -TimeoutMs $timeoutMs)
+        $detail = @(Test-DnsResolver -ResolverName $name -ServerIP $ip -DomainList $Domains -Count $QueryCount -TimeoutMs $timeoutMs)
         $allDetailResults.AddRange($detail)
 
         $validAverages = $detail | Where-Object { $null -ne $_.AvgMs } | Select-Object -ExpandProperty AvgMs
@@ -540,9 +542,5 @@ catch {
 }
 finally {
     $ProgressPreference = 'Continue'
-    if ($script:DnsRunspacePool) {
-        $script:DnsRunspacePool.Close()
-        $script:DnsRunspacePool.Dispose()
-    }
 }
 #EndRegion Main Execution
