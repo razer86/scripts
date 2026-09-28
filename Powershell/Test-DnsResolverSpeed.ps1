@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Benchmarks DNS resolution speed against the customer's current resolver and a set of public resolvers.
+    Benchmarks DNS resolution speed against the customer's current resolver(s) and a set of public resolvers.
 
 .DESCRIPTION
     Raw bandwidth speed tests (Run-Speedtest.ps1) don't catch one of the most common causes of a
@@ -9,12 +9,17 @@
     sluggish or unreliable resolver can make a fast connection feel slow.
 
     This script:
-    - Detects the DNS server(s) currently configured on the active network adapter
-    - Times resolution of a set of common domains against that resolver and several well-known
+    - Detects the DNS server(s) currently configured on every active network adapter, and labels
+      each one with the interface it belongs to (Ethernet / Wi-Fi / Cellular) - useful on devices
+      with multiple simultaneously-active connections (e.g. Wi-Fi + a 5G/mobile broadband adapter)
+    - Times resolution of a set of common domains against those resolvers and several well-known
       public resolvers (Cloudflare, Google, Quad9, OpenDNS by default)
     - Runs multiple queries per domain to get an average, min/max, and jitter (standard deviation)
+    - Enforces a hard per-query timeout and quickly probes each resolver first, so a completely
+      unreachable/firewalled resolver (common on carrier-NAT mobile broadband) fails fast instead
+      of hanging for minutes waiting out the OS resolver's own retry/timeout behaviour
     - Reports failure/timeout rates per resolver
-    - Flags whether the current resolver looks meaningfully slower or less reliable than the
+    - Flags whether each current resolver looks meaningfully slower or less reliable than the
       public alternatives, which is useful evidence when raw bandwidth speed tests come back clean
 
 .PARAMETER Resolvers
@@ -29,9 +34,15 @@
     Number of queries to run per domain per resolver. Higher counts give a more reliable average
     at the cost of a longer test. Default is 5.
 
+.PARAMETER TimeoutSeconds
+    Hard timeout applied to every individual DNS query. A query that doesn't complete within this
+    window is counted as a failure and abandoned rather than waiting on the OS resolver's own
+    (much longer) internal retry/timeout behaviour. Default is 2 seconds.
+
 .PARAMETER ExcludeCurrentDns
     Skips auto-detecting and testing the currently configured system DNS server(s). By default the
-    current resolver is always included first so it can be compared against the public resolvers.
+    current resolver(s) on every active adapter are always included first so they can be compared
+    against the public resolvers.
 
 .PARAMETER SkipCacheBust
     Skips clearing the local DNS client cache between queries. Cache-busting requires an elevated
@@ -43,17 +54,17 @@
 
 .EXAMPLE
     .\Test-DnsResolverSpeed.ps1
-    Detects the current DNS server, tests it plus the default public resolvers against the default
-    domain list, and prints a summary table with a verdict.
+    Detects the current DNS server(s) per active interface, tests them plus the default public
+    resolvers against the default domain list, and prints a summary table with a verdict per interface.
 
 .EXAMPLE
-    .\Test-DnsResolverSpeed.ps1 -QueryCount 10 -ExportCsvPath C:\Temp\dns-results.csv
-    Runs a more thorough test (10 queries per domain) and exports the raw results to CSV.
+    .\Test-DnsResolverSpeed.ps1 -QueryCount 10 -TimeoutSeconds 3 -ExportCsvPath C:\Temp\dns-results.csv
+    Runs a more thorough test (10 queries per domain, 3s timeout) and exports the raw results to CSV.
 
 .EXAMPLE
     .\Test-DnsResolverSpeed.ps1 -Resolvers "ISP=203.0.113.10","Router=192.168.1.1"
-    Tests only the specified resolvers (plus the detected current resolver) instead of the public
-    resolver defaults.
+    Tests only the specified resolvers (plus the detected current resolver(s)) instead of the
+    public resolver defaults.
 
 .NOTES
     File Name      : Test-DnsResolverSpeed.ps1
@@ -88,6 +99,10 @@ param(
     [int]$QueryCount = 5,
 
     [Parameter()]
+    [ValidateRange(1, 30)]
+    [int]$TimeoutSeconds = 2,
+
+    [Parameter()]
     [switch]$ExcludeCurrentDns,
 
     [Parameter()]
@@ -110,10 +125,17 @@ $defaultPublicResolvers = [ordered]@{
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $canBustCache = $isAdmin -and -not $SkipCacheBust
+$timeoutMs = $TimeoutSeconds * 1000
 
 if (-not $isAdmin -and -not $SkipCacheBust) {
     Write-Warning "Not running elevated - local DNS cache cannot be cleared between queries. Repeat lookups of the same name may read from cache and understate real latency. Run as Administrator for the most accurate results."
 }
+
+# Shared runspace pool used to enforce a hard timeout per DNS query (Resolve-DnsName has no
+# reliable built-in timeout - an unreachable/firewalled resolver can otherwise hang for the OS
+# resolver's own internal retry window, which is what made this test appear to "get stuck").
+$script:DnsRunspacePool = [runspacefactory]::CreateRunspacePool(1, 5)
+$script:DnsRunspacePool.Open()
 #EndRegion Configuration
 
 #Region Functions
@@ -130,28 +152,121 @@ function Write-ColorOutput {
     Write-Host $Message -ForegroundColor $ForegroundColor
 }
 
+function Get-InterfaceTypeLabel {
+    <#
+    .SYNOPSIS
+        Classifies a network adapter as Ethernet / Wi-Fi / Cellular based on its media type and description.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][int]$InterfaceIndex)
+
+    $adapter = Get-NetAdapter -InterfaceIndex $InterfaceIndex -ErrorAction SilentlyContinue
+    if (-not $adapter) { return 'Unknown' }
+
+    if ($adapter.InterfaceDescription -match 'Mobile Broadband|WWAN|Cellular|Snapdragon|Wireless WAN|\bLTE\b|\b5G\b') {
+        return 'Cellular'
+    }
+
+    switch -Regex ($adapter.MediaType) {
+        '802\.3'  { return 'Ethernet' }
+        '802\.11' { return 'Wi-Fi' }
+        default   { return $adapter.Name }
+    }
+}
+
 function Get-CurrentDnsServers {
     <#
     .SYNOPSIS
-        Returns the IPv4 DNS servers configured on adapters that are actually up and not virtual/loopback.
+        Returns the IPv4 DNS servers configured on adapters that are actually up and not virtual/loopback,
+        each labelled with the interface (and interface type) it was found on.
     #>
     [CmdletBinding()]
     param()
 
-    try {
-        $servers = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
-            Where-Object {
-                $_.ServerAddresses.Count -gt 0 -and
-                (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue).Status -eq 'Up'
-            } |
-            Select-Object -ExpandProperty ServerAddresses -Unique |
-            Where-Object { $_ -notmatch '^127\.' -and $_ -notmatch '^169\.254\.' }
+    $found = [System.Collections.Generic.List[object]]::new()
 
-        return @($servers)
+    try {
+        $entries = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.ServerAddresses.Count -gt 0 }
+
+        foreach ($entry in $entries) {
+            $adapter = Get-NetAdapter -InterfaceIndex $entry.InterfaceIndex -ErrorAction SilentlyContinue
+            if (-not $adapter -or $adapter.Status -ne 'Up') { continue }
+
+            $typeLabel = Get-InterfaceTypeLabel -InterfaceIndex $entry.InterfaceIndex
+
+            foreach ($ip in $entry.ServerAddresses) {
+                if ($ip -match '^127\.' -or $ip -match '^169\.254\.') { continue }
+
+                $found.Add([PSCustomObject]@{
+                    ServerIP        = $ip
+                    InterfaceAlias  = $entry.InterfaceAlias
+                    InterfaceType   = $typeLabel
+                })
+            }
+        }
     }
     catch {
         Write-Verbose "Could not enumerate current DNS servers: $_"
-        return @()
+    }
+
+    return @($found | Sort-Object -Property ServerIP, InterfaceAlias -Unique)
+}
+
+function Invoke-DnsQueryWithTimeout {
+    <#
+    .SYNOPSIS
+        Runs Resolve-DnsName on a pooled runspace with a hard wall-clock timeout.
+
+    .OUTPUTS
+        System.Double milliseconds elapsed on success, or $null on failure/timeout.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Domain,
+
+        [Parameter(Mandatory)]
+        [string]$ServerIP,
+
+        [Parameter(Mandatory)]
+        [int]$TimeoutMs
+    )
+
+    $ps = [powershell]::Create()
+    $ps.RunspacePool = $script:DnsRunspacePool
+    [void]$ps.AddScript({
+        param($Domain, $ServerIP)
+        Resolve-DnsName -Name $Domain -Server $ServerIP -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop
+    }).AddArgument($Domain).AddArgument($ServerIP)
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $asyncResult = $ps.BeginInvoke()
+    $completed = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMs)
+    $sw.Stop()
+
+    try {
+        if (-not $completed) {
+            Write-Verbose "Query for $Domain via $ServerIP timed out after ${TimeoutMs}ms"
+            try { $ps.Stop() } catch { Write-Verbose "Failed to stop timed-out runspace: $_" }
+            return $null
+        }
+
+        $null = $ps.EndInvoke($asyncResult)
+        if ($ps.HadErrors) {
+            $errMsg = ($ps.Streams.Error | Select-Object -First 1).ToString()
+            Write-Verbose "Query for $Domain via $ServerIP failed: $errMsg"
+            return $null
+        }
+
+        return $sw.Elapsed.TotalMilliseconds
+    }
+    catch {
+        Write-Verbose "Query for $Domain via $ServerIP failed: $_"
+        return $null
+    }
+    finally {
+        $ps.Dispose()
     }
 }
 
@@ -169,24 +284,44 @@ function Measure-DnsQuery {
         [string]$ServerIP,
 
         [Parameter()]
-        [bool]$BustCache
+        [bool]$BustCache,
+
+        [Parameter(Mandatory)]
+        [int]$TimeoutMs
     )
 
     if ($BustCache) {
         try { Clear-DnsClientCache -ErrorAction Stop } catch { Write-Verbose "Cache clear failed: $_" }
     }
 
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    try {
-        $null = Resolve-DnsName -Name $Domain -Server $ServerIP -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop
-        $sw.Stop()
-        return $sw.Elapsed.TotalMilliseconds
+    return Invoke-DnsQueryWithTimeout -Domain $Domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
+}
+
+function Test-ResolverReachable {
+    <#
+    .SYNOPSIS
+        Quickly probes a resolver with up to two lookups before committing to the full test matrix,
+        so a dead/firewalled resolver (e.g. an internal carrier-NAT address on a mobile broadband
+        adapter) is skipped in seconds instead of hanging through the full domain x query-count matrix.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServerIP,
+
+        [Parameter(Mandatory)]
+        [string[]]$ProbeDomains,
+
+        [Parameter(Mandatory)]
+        [int]$TimeoutMs
+    )
+
+    foreach ($domain in $ProbeDomains) {
+        $ms = Invoke-DnsQueryWithTimeout -Domain $domain -ServerIP $ServerIP -TimeoutMs $TimeoutMs
+        if ($null -ne $ms) { return $true }
     }
-    catch {
-        $sw.Stop()
-        Write-Verbose "Query for $Domain via $ServerIP failed: $($_.Exception.Message)"
-        return $null
-    }
+
+    return $false
 }
 
 function Test-DnsResolver {
@@ -209,17 +344,40 @@ function Test-DnsResolver {
         [int]$Count,
 
         [Parameter(Mandatory)]
-        [bool]$BustCache
+        [bool]$BustCache,
+
+        [Parameter(Mandatory)]
+        [int]$TimeoutMs
     )
 
     $results = [System.Collections.Generic.List[object]]::new()
+
+    $probeDomains = @($DomainList | Select-Object -First 2)
+    if (-not (Test-ResolverReachable -ServerIP $ServerIP -ProbeDomains $probeDomains -TimeoutMs $TimeoutMs)) {
+        Write-ColorOutput "  -> $ResolverName ($ServerIP) did not respond to a quick probe - marking unreachable and skipping the full test." -ForegroundColor Red
+
+        foreach ($domain in $DomainList) {
+            $results.Add([PSCustomObject]@{
+                Resolver = $ResolverName
+                ServerIP = $ServerIP
+                Domain   = $domain
+                Samples  = 0
+                Failures = $Count
+                AvgMs    = $null
+                MinMs    = $null
+                MaxMs    = $null
+            })
+        }
+
+        return $results
+    }
 
     foreach ($domain in $DomainList) {
         $samples = [System.Collections.Generic.List[double]]::new()
         $failures = 0
 
         for ($i = 0; $i -lt $Count; $i++) {
-            $ms = Measure-DnsQuery -Domain $domain -ServerIP $ServerIP -BustCache $BustCache
+            $ms = Measure-DnsQuery -Domain $domain -ServerIP $ServerIP -BustCache $BustCache -TimeoutMs $TimeoutMs
             if ($null -ne $ms) {
                 $samples.Add($ms)
             } else {
@@ -260,7 +418,7 @@ try {
         exit 1
     }
 
-    # Build the ordered list of resolvers to test: Name -> IP
+    # Build the ordered list of resolvers to test: Name -> { IP, Interface }
     $resolverMap = [ordered]@{}
 
     if (-not $ExcludeCurrentDns) {
@@ -268,11 +426,22 @@ try {
         if ($currentServers.Count -eq 0) {
             Write-Warning "Could not detect the current system DNS server(s) - skipping that comparison."
         } else {
-            $idx = 1
-            foreach ($ip in $currentServers) {
-                $label = if ($currentServers.Count -gt 1) { "Current-$idx" } else { 'Current' }
-                $resolverMap[$label] = $ip
-                $idx++
+            $typeCounts = @{}
+            foreach ($server in $currentServers) {
+                if ($typeCounts.ContainsKey($server.InterfaceType)) { $typeCounts[$server.InterfaceType]++ }
+                else { $typeCounts[$server.InterfaceType] = 1 }
+            }
+
+            $typeSeen = @{}
+            foreach ($server in $currentServers) {
+                $type = $server.InterfaceType
+                if ($typeCounts[$type] -gt 1) {
+                    if ($typeSeen.ContainsKey($type)) { $typeSeen[$type]++ } else { $typeSeen[$type] = 1 }
+                    $label = "Current ($type)-$($typeSeen[$type])"
+                } else {
+                    $label = "Current ($type)"
+                }
+                $resolverMap[$label] = [PSCustomObject]@{ ServerIP = $server.ServerIP; InterfaceAlias = $server.InterfaceAlias }
             }
         }
     }
@@ -283,28 +452,29 @@ try {
                 Write-Error "Invalid -Resolvers entry '$entry'. Expected format: Name=IPAddress"
                 exit 2
             }
-            $resolverMap[$Matches['name']] = $Matches['ip']
+            $resolverMap[$Matches['name']] = [PSCustomObject]@{ ServerIP = $Matches['ip']; InterfaceAlias = $null }
         }
     } else {
         foreach ($key in $defaultPublicResolvers.Keys) {
-            $resolverMap[$key] = $defaultPublicResolvers[$key]
+            $resolverMap[$key] = [PSCustomObject]@{ ServerIP = $defaultPublicResolvers[$key]; InterfaceAlias = $null }
         }
     }
 
     Write-ColorOutput "DNS Resolver Speed Test" -ForegroundColor Cyan
-    Write-ColorOutput "Resolvers under test: $(($resolverMap.Keys | ForEach-Object { "$_ ($($resolverMap[$_]))" }) -join ', ')" -ForegroundColor Gray
+    Write-ColorOutput "Resolvers under test: $(($resolverMap.Keys | ForEach-Object { "$_ ($($resolverMap[$_].ServerIP))" }) -join ', ')" -ForegroundColor Gray
     Write-ColorOutput "Domains: $($Domains -join ', ')" -ForegroundColor Gray
-    Write-ColorOutput "Queries per domain: $QueryCount | Cache-busting: $(if ($canBustCache) { 'enabled' } else { 'disabled' })" -ForegroundColor Gray
+    Write-ColorOutput "Queries per domain: $QueryCount | Timeout: ${TimeoutSeconds}s | Cache-busting: $(if ($canBustCache) { 'enabled' } else { 'disabled' })" -ForegroundColor Gray
     Write-Host ""
 
     $allDetailResults = [System.Collections.Generic.List[object]]::new()
     $summary = [System.Collections.Generic.List[object]]::new()
 
     foreach ($name in $resolverMap.Keys) {
-        $ip = $resolverMap[$name]
-        Write-ColorOutput "Testing $name ($ip)..." -ForegroundColor Yellow
+        $ip = $resolverMap[$name].ServerIP
+        $iface = $resolverMap[$name].InterfaceAlias
+        Write-ColorOutput "Testing $name ($ip)$(if ($iface) { " via $iface" })..." -ForegroundColor Yellow
 
-        $detail = Test-DnsResolver -ResolverName $name -ServerIP $ip -DomainList $Domains -Count $QueryCount -BustCache $canBustCache
+        $detail = @(Test-DnsResolver -ResolverName $name -ServerIP $ip -DomainList $Domains -Count $QueryCount -BustCache $canBustCache -TimeoutMs $timeoutMs)
         $allDetailResults.AddRange($detail)
 
         $validAverages = $detail | Where-Object { $null -ne $_.AvgMs } | Select-Object -ExpandProperty AvgMs
@@ -315,6 +485,7 @@ try {
         $summary.Add([PSCustomObject]@{
             Resolver     = $name
             ServerIP     = $ip
+            Interface    = $iface
             AvgMs        = if ($validAverages) { [math]::Round(($validAverages | Measure-Object -Average).Average, 1) } else { $null }
             JitterMs     = if ($validAverages.Count -gt 1) { [math]::Round((Get-StdDev -Values $validAverages), 1) } else { 0 }
             MinMs        = if ($validAverages) { [math]::Round(($validAverages | Measure-Object -Minimum).Minimum, 1) } else { $null }
@@ -326,30 +497,33 @@ try {
     Write-Host ""
     Write-ColorOutput "===== Summary (sorted fastest to slowest) =====" -ForegroundColor Cyan
     $sortedSummary = $summary | Sort-Object -Property @{ Expression = { if ($null -eq $_.AvgMs) { [double]::MaxValue } else { $_.AvgMs } } }
-    $sortedSummary | Format-Table -Property Resolver, ServerIP,
+    $sortedSummary | Format-Table -Property Resolver, ServerIP, Interface,
         @{Label = 'Avg (ms)'; Expression = { $_.AvgMs } },
         @{Label = 'Jitter (ms)'; Expression = { $_.JitterMs } },
         @{Label = 'Min (ms)'; Expression = { $_.MinMs } },
         @{Label = 'Max (ms)'; Expression = { $_.MaxMs } },
         @{Label = 'Failure %'; Expression = { $_.FailureRate } } -AutoSize | Out-Host
 
-    # Verdict: compare the current resolver against the fastest healthy alternative
-    $current = $summary | Where-Object { $_.Resolver -like 'Current*' } | Select-Object -First 1
+    # Verdict: compare each current-interface resolver against the fastest healthy public alternative
+    $currentResolvers = $summary | Where-Object { $_.Resolver -like 'Current*' }
     $bestAlternative = $summary | Where-Object { $_.Resolver -notlike 'Current*' -and $null -ne $_.AvgMs -and $_.FailureRate -lt 20 } |
         Sort-Object -Property AvgMs | Select-Object -First 1
 
     Write-Host ""
-    if (-not $current) {
-        Write-ColorOutput "Current system resolver was not tested (skipped or undetectable) - no comparison available." -ForegroundColor Gray
-    }
-    elseif ($null -eq $current.AvgMs -or $current.FailureRate -ge 20) {
-        Write-ColorOutput "VERDICT: The current DNS resolver ($($current.ServerIP)) is failing or timing out on a significant share of queries ($($current.FailureRate)%). This is a strong candidate for the 'slow internet' complaint even if raw bandwidth is fine." -ForegroundColor Red
-    }
-    elseif ($bestAlternative -and $current.AvgMs -gt ([math]::Max(40, $bestAlternative.AvgMs * 1.5))) {
-        Write-ColorOutput "VERDICT: The current DNS resolver ($($current.ServerIP), avg $($current.AvgMs)ms) is notably slower than $($bestAlternative.Resolver) (avg $($bestAlternative.AvgMs)ms). DNS resolution is a plausible cause of the perceived slowness - consider switching the customer to a faster public resolver or checking the router/ISP DNS." -ForegroundColor Yellow
-    }
-    else {
-        Write-ColorOutput "VERDICT: The current DNS resolver ($($current.ServerIP), avg $($current.AvgMs)ms) performs comparably to the public resolvers tested. DNS resolution speed is unlikely to explain a 'slow internet' complaint here - look elsewhere (Wi-Fi, device, application-level issues)." -ForegroundColor Green
+    if ($currentResolvers.Count -eq 0) {
+        Write-ColorOutput "No current system resolver was tested (skipped or undetectable) - no comparison available." -ForegroundColor Gray
+    } else {
+        foreach ($current in $currentResolvers) {
+            if ($null -eq $current.AvgMs -or $current.FailureRate -ge 20) {
+                Write-ColorOutput "VERDICT [$($current.Resolver)]: $($current.ServerIP) is failing or timing out on a significant share of queries ($($current.FailureRate)%). This is a strong candidate for the 'slow internet' complaint even if raw bandwidth is fine." -ForegroundColor Red
+            }
+            elseif ($bestAlternative -and $current.AvgMs -gt ([math]::Max(40, $bestAlternative.AvgMs * 1.5))) {
+                Write-ColorOutput "VERDICT [$($current.Resolver)]: $($current.ServerIP) (avg $($current.AvgMs)ms) is notably slower than $($bestAlternative.Resolver) (avg $($bestAlternative.AvgMs)ms). DNS resolution is a plausible cause of the perceived slowness on this interface - consider switching to a faster public resolver or checking the router/ISP DNS." -ForegroundColor Yellow
+            }
+            else {
+                Write-ColorOutput "VERDICT [$($current.Resolver)]: $($current.ServerIP) (avg $($current.AvgMs)ms) performs comparably to the public resolvers tested. DNS resolution speed is unlikely to explain a 'slow internet' complaint on this interface - look elsewhere (Wi-Fi signal, device, application-level issues)." -ForegroundColor Green
+            }
+        }
     }
 
     if ($ExportCsvPath) {
@@ -366,5 +540,9 @@ catch {
 }
 finally {
     $ProgressPreference = 'Continue'
+    if ($script:DnsRunspacePool) {
+        $script:DnsRunspacePool.Close()
+        $script:DnsRunspacePool.Dispose()
+    }
 }
 #EndRegion Main Execution
