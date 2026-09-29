@@ -29,3 +29,7 @@ chromedriver*
 *.cache_ggshield
 # === Built binaries (RDPWrap offset finder) ===
 Powershell/RDPWrap/dist/
+
+# === Claude Code local state (worktrees, session locks) ===
+.claude/worktrees/
+.claude/scheduled_tasks.lock
