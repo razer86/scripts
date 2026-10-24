@@ -158,6 +158,7 @@ $script:Bugchecks = @{
     '141'      = 'VIDEO_ENGINE_TIMEOUT_DETECTED|Video'
     '144'      = 'BUGCODE_USB3_DRIVER|Driver'
     '154'      = 'UNEXPECTED_STORE_EXCEPTION|Storage'
+    '193'      = 'VIDEO_DXGKRNL_LIVEDUMP|Video'
     '1c8'      = 'MANUALLY_INITIATED_POWER_BUTTON_HOLD|Manual'
     'c000021a' = 'STATUS_SYSTEM_PROCESS_TERMINATED|System'
     'c0000221' = 'STATUS_IMAGE_CHECKSUM_MISMATCH|System'
@@ -341,6 +342,11 @@ function Get-ReviewRules {
            Title = 'Disk predicts it will fail'
            Explain = 'The drive reported through SMART that it expects to fail soon.'
            Next = 'Back up now and replace the drive. Do not wait for the next error.'; Key = { param($e) Get-Prop $e 0 } },
+        @{ Id = 'disk-hardware-error'; Log = 'System'; Provider = 'disk'; EventIds = @(154); Severity = 'Medium'; Category = 'Storage'
+           EscalateAt = 20; EscalateTo = 'High'
+           Title = 'Disk I/O failed with a hardware error'
+           Explain = 'A read or write to a disk failed outright. On a removable drive or card reader (especially at block 0) it usually means no media or a bad connection; on an internal disk it points at a failing drive or cable.'
+           Next = 'The sample message names the disk number; match it with Get-Disk. If it is removable, check or replace the device; if internal, check SMART/NVMe health and back up.' },
         @{ Id = 'disk-retries'; Log = 'System'; Provider = 'disk'; EventIds = @(153); Severity = 'Medium'; Category = 'Storage'
            EscalateAt = 20; EscalateTo = 'High'
            Title = 'Disk I/O had to be retried'
@@ -559,23 +565,26 @@ function Get-LogCoverage {
 # ===   Restarts & crashes              ===
 # =========================================
 
-function ConvertFrom-ShutdownTime {
-    # EventLog 6008 carries the time the PC went down as two locale-formatted
-    # strings. Accepted only if it lands shortly before the event: a wrong
-    # locale guess must not produce a confident wrong time.
-    param($Event)
-    $time = ((Get-Prop $Event 0) -replace '[\u200e\u200f]', '').Trim()
-    $date = ((Get-Prop $Event 1) -replace '[\u200e\u200f]', '').Trim()
-    if (-not $time -or -not $date) { return $null }
-    $text = "$date $time"
-    foreach ($culture in @([System.Globalization.CultureInfo]::CurrentCulture, [System.Globalization.CultureInfo]::GetCultureInfo('en-US'), [System.Globalization.CultureInfo]::InvariantCulture)) {
-        $parsed = [datetime]::MinValue
-        if ([datetime]::TryParse($text, $culture, [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) {
-            $gap = ($Event.Time - $parsed).TotalHours
-            if ($gap -ge -0.1 -and $gap -le 72) { return $parsed }
-        }
+function Format-Duration {
+    param([timespan]$Span)
+    if ($Span.TotalDays -ge 1) { return '{0}d {1}h' -f [int][math]::Floor($Span.TotalDays), $Span.Hours }
+    if ($Span.TotalHours -ge 1) { return '{0}h {1}m' -f [int][math]::Floor($Span.TotalHours), $Span.Minutes }
+    return '{0}m' -f [int][math]::Round($Span.TotalMinutes)
+}
+
+function Get-LastActivityBefore {
+    # When the System log last wrote anything before a restart. This, not the
+    # time inside EventLog 6008 ("previous shutdown at ..."), says how long the
+    # PC was silent: that stamp is written periodically and can lag the real
+    # last activity by hours. The restart's own boot entries are logged within
+    # seconds of the Kernel-Power 41 record, hence the margin.
+    param([datetime]$Time)
+    try {
+        $e = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = $Time.AddDays(-3); EndTime = $Time.AddSeconds(-90) } -MaxEvents 1 -ErrorAction Stop
+        return $e.TimeCreated
+    } catch {
+        return $null
     }
-    return $null
 }
 
 function Get-RestartIncidents {
@@ -602,7 +611,6 @@ function Get-RestartIncidents {
     foreach ($cluster in $clusters) {
         $events = @($cluster)
         $k41 = $events | Where-Object { $_.Provider -eq 'Microsoft-Windows-Kernel-Power' } | Select-Object -First 1
-        $e6008 = $events | Where-Object { $_.Provider -eq 'EventLog' } | Select-Object -First 1
         $ser = $events | Where-Object { $_.Provider -eq 'Microsoft-Windows-WER-SystemErrorReporting' } | Select-Object -First 1
 
         $code = [uint32]0
@@ -649,20 +657,17 @@ function Get-RestartIncidents {
             $title = 'Unexpected shutdown (no crash or power record)'
         }
 
-        $downAt = $null
-        if ($e6008) { $downAt = ConvertFrom-ShutdownTime $e6008 }
-
         $incidents += [pscustomobject]@{
-            Time        = ($events | Sort-Object Time | Select-Object -First 1).Time
-            Kind        = $kind
-            Severity    = $sev
-            Title       = $title
-            StopCode    = if ($code -ne 0) { '0x{0:X}' -f $code } else { '' }
-            StopName    = if ($info) { $info.Name } else { '' }
-            Class       = if ($info) { $info.Class } else { '' }
-            Parameters  = $params
-            DuringSleep = $duringSleep
-            WentDownAt  = $downAt
+            Time         = ($events | Sort-Object Time | Select-Object -First 1).Time
+            Kind         = $kind
+            Severity     = $sev
+            Title        = $title
+            StopCode     = if ($code -ne 0) { '0x{0:X}' -f $code } else { '' }
+            StopName     = if ($info) { $info.Name } else { '' }
+            Class        = if ($info) { $info.Class } else { '' }
+            Parameters   = $params
+            DuringSleep  = $duringSleep
+            LastActivity = $null     # filled in by New-ReviewReport (needs the log)
         }
     }
     return , @($incidents | Sort-Object Time -Descending)
@@ -843,6 +848,33 @@ function Get-RuleFindings {
     return , $findings
 }
 
+function ConvertTo-DumpFindings {
+    # Live kernel dumps with a video stop code are graphics hangs that Windows
+    # recovered from without a blue screen. They are evidence even when Windows
+    # Error Reporting is off and left no event or report behind.
+    param([object[]]$Dumps)
+    $video = @($Dumps | Where-Object { $_.Class -eq 'Video' })
+    if ($video.Count -eq 0) { return @() }
+    $sorted = @($video | Sort-Object Modified)
+    $sev = 'Medium'
+    if ($video.Count -ge 3) { $sev = 'High' }
+    $kinds = @($video | Group-Object { '{0} ({1})' -f $_.CodeName, $_.Code } | Sort-Object Count -Descending |
+            ForEach-Object { '{0} x{1}' -f $_.Name, $_.Count })
+    return , @([pscustomobject]@{
+            RuleId   = 'gpu-watchdog-dumps'
+            Severity = $sev
+            Category = 'Hardware'
+            Title    = 'Graphics hangs captured in crash dumps'
+            Count    = $video.Count
+            First    = $sorted[0].Modified
+            Last     = $sorted[-1].Modified
+            Detail   = ($kinds -join '; ')
+            Explain  = 'Windows wrote live kernel dumps because the graphics stack stopped responding (video engine timeout / TDR). It recovered without a blue screen, but a hang that does not recover looks like a freeze that needs a power-button reset.'
+            Next     = 'Clean-install the graphics driver (DDU, then a known-good version), check GPU temperatures and power, and remove virtual display drivers or overlays while testing. Compare the dump times with the restarts above.'
+            Sample   = ''
+        })
+}
+
 function Complete-Findings {
     # Samples need message formatting, so they are filled in after ranking.
     param([object[]]$Findings)
@@ -885,6 +917,31 @@ function Get-ReviewContext {
     return $ctx
 }
 
+function ConvertFrom-DumpHeader {
+    # The first 0x60 bytes of a 64-bit dump hold the stop code (0x38) and its
+    # first parameter (0x40). For a live kernel dump the code is the watchdog
+    # that fired (0x141 video engine timeout, 0x117 video TDR, ...), which turns
+    # a bare "WATCHDOG-....dmp" into something that says what hung.
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -lt 0x48) { return $null }
+    if ([System.Text.Encoding]::ASCII.GetString($Bytes, 0, 8) -ne 'PAGEDU64') { return $null }
+    return @{ Code = [BitConverter]::ToUInt32($Bytes, 0x38); Parameter1 = [BitConverter]::ToUInt64($Bytes, 0x40) }
+}
+
+function Read-DumpHeader {
+    param([string]$Path)
+    try {
+        $fs = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        try {
+            $buffer = New-Object byte[] 0x60
+            [void]$fs.Read($buffer, 0, $buffer.Length)
+        } finally { $fs.Close() }
+        return ConvertFrom-DumpHeader $buffer
+    } catch {
+        return $null
+    }
+}
+
 function Get-DumpFiles {
     param([datetime]$Since)
     $found = @()
@@ -905,11 +962,23 @@ function Get-DumpFiles {
             }
             foreach ($f in @($files)) {
                 if ($f.LastWriteTime -ge $Since) {
+                    $code = ''
+                    $name = ''
+                    $class = ''
+                    $header = Read-DumpHeader $f.FullName
+                    if ($header -and $header.Code -ne 0) {
+                        $info = Get-BugcheckInfo $header.Code
+                        $code = '0x{0:X}' -f $header.Code
+                        if ($info.Class -ne 'Unknown') { $name = $info.Name; $class = $info.Class }
+                    }
                     $found += [pscustomobject]@{
                         Kind     = $loc.Kind
                         Path     = $f.FullName
                         SizeMB   = [math]::Round($f.Length / 1MB, 1)
                         Modified = $f.LastWriteTime
+                        Code     = $code
+                        CodeName = $name
+                        Class    = $class
                     }
                 }
             }
@@ -933,18 +1002,22 @@ function New-ReviewReport {
     $events = Get-ReviewEvents -Since $since
 
     $incidents = Get-RestartIncidents -Events $events
+    # One log query per incident, so cap it: the newest ones are what matter.
+    foreach ($i in @($incidents | Select-Object -First 10)) {
+        $i.LastActivity = Get-LastActivityBefore $i.Time
+    }
     $planned = Get-PlannedRestarts -Events $events
     $boots = @($events | Where-Object { $_.Provider -eq 'EventLog' -and $_.Id -eq 6005 }).Count
+    $dumps = Get-DumpFiles -Since $since
 
     $all = @()
     $all += Get-RuleFindings -Events $events -Rules (Get-ReviewRules)
     $all += ConvertTo-IncidentFindings -Incidents $incidents
+    $all += ConvertTo-DumpFindings -Dumps $dumps
     $all = Sort-Findings $all
 
     $shown = @($all | Where-Object { $IncludeInfo -or $_.Severity -ne 'Info' })
     $hidden = @($all | Where-Object { -not ($IncludeInfo -or $_.Severity -ne 'Info') })
-
-    $dumps = Get-DumpFiles -Since $since
 
     # A log that does not reach back as far as asked is a limit on the review,
     # not evidence that nothing happened earlier.
@@ -1014,7 +1087,9 @@ function Format-ReviewText {
         & $add ('RESTARTS & CRASHES: {0} unexpected' -f $inc.Count)
         foreach ($i in ($inc | Select-Object -First 8)) {
             $line = '  {0}  {1}' -f (Format-Time $i.Time), $i.Title
-            if ($i.WentDownAt) { $line += ' (went down about {0})' -f (Format-Time $i.WentDownAt) }
+            if ($i.LastActivity) {
+                $line += ' (log silent {0}, last entry {1})' -f (Format-Duration ($i.Time - $i.LastActivity)), (Format-Time $i.LastActivity)
+            }
             if ($i.DuringSleep) { $line += ' [during sleep/resume]' }
             & $add $line
         }
@@ -1058,8 +1133,11 @@ function Format-ReviewText {
         & $add ''
         & $add ('CRASH DUMPS in window: {0}' -f $d.Count)
         foreach ($x in ($d | Select-Object -First 5)) {
-            & $add ('  {0}  {1}  {2} MB  {3}' -f (Format-Time $x.Modified), $x.Kind, $x.SizeMB, $x.Path)
+            $what = ''
+            if ($x.Code) { $what = '  {0} {1}' -f $x.Code, $x.CodeName }
+            & $add ('  {0}  {1}{2}  {3} MB  {4}' -f (Format-Time $x.Modified), $x.Kind, $what, $x.SizeMB, $x.Path)
         }
+        if ($d.Count -gt 5) { & $add ('  ... and {0} more (see -OutDir report)' -f ($d.Count - 5)) }
     }
     return ($L -join [Environment]::NewLine)
 }
@@ -1121,13 +1199,13 @@ footer{margin-top:30px;color:#6e7781;font-size:12px}
     if ($inc.Count -eq 0) {
         [void]$sb.AppendLine('<p>No unexpected restarts or crashes recorded.</p>')
     } else {
-        [void]$sb.AppendLine('<table><tr><th>Logged</th><th>What happened</th><th>Went down about</th><th>Notes</th></tr>')
+        [void]$sb.AppendLine('<table><tr><th>Logged</th><th>What happened</th><th>Log silent for</th><th>Notes</th></tr>')
         foreach ($i in $inc) {
             $notes = @()
             if ($i.DuringSleep) { $notes += 'during sleep/resume' }
             if ($i.Parameters) { $notes += "parameters: $($i.Parameters)" }
             [void]$sb.AppendLine(('<tr><td>{0}</td><td><span class="sev {1}">{1}</span> {2}</td><td>{3}</td><td>{4}</td></tr>' -f `
-                (& $h (Format-Time $i.Time)), $i.Severity, (& $h $i.Title), (& $h (Format-Time $i.WentDownAt)), (& $h ($notes -join '; '))))
+                (& $h (Format-Time $i.Time)), $i.Severity, (& $h $i.Title), (& $h $(if ($i.LastActivity) { '{0} (last entry {1})' -f (Format-Duration ($i.Time - $i.LastActivity)), (Format-Time $i.LastActivity) } else { '' })), (& $h ($notes -join '; '))))
         }
         [void]$sb.AppendLine('</table>')
     }
@@ -1162,9 +1240,9 @@ footer{margin-top:30px;color:#6e7781;font-size:12px}
         [void]$sb.AppendLine('</table>')
     }
     if (@($Report.Dumps).Count -gt 0) {
-        [void]$sb.AppendLine('<h2>Crash dump files in the window</h2><table><tr><th>Modified</th><th>Kind</th><th>Size</th><th>Path</th></tr>')
+        [void]$sb.AppendLine('<h2>Crash dump files in the window</h2><table><tr><th>Modified</th><th>Kind</th><th>Stop code</th><th>Size</th><th>Path</th></tr>')
         foreach ($x in $Report.Dumps) {
-            [void]$sb.AppendLine(('<tr><td>{0}</td><td>{1}</td><td>{2} MB</td><td class="smp">{3}</td></tr>' -f (& $h (Format-Time $x.Modified)), (& $h $x.Kind), $x.SizeMB, (& $h $x.Path)))
+            [void]$sb.AppendLine(('<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3} MB</td><td class="smp">{4}</td></tr>' -f (& $h (Format-Time $x.Modified)), (& $h $x.Kind), (& $h ('{0} {1}' -f $x.Code, $x.CodeName).Trim()), $x.SizeMB, (& $h $x.Path)))
         }
         [void]$sb.AppendLine('</table>')
     }
@@ -1196,13 +1274,15 @@ function Export-ReviewReport {
         Incidents = @($Report.Incidents | ForEach-Object {
                 [pscustomobject]@{ Time = Format-Time $_.Time; Severity = $_.Severity; Title = $_.Title; StopCode = $_.StopCode
                                    StopName = $_.StopName; Class = $_.Class; Parameters = $_.Parameters
-                                   DuringSleep = $_.DuringSleep; WentDownAt = Format-Time $_.WentDownAt } })
+                                   DuringSleep = $_.DuringSleep; LastLogEntry = Format-Time $_.LastActivity
+                                   SilentMinutes = if ($_.LastActivity) { [int][math]::Round(($_.Time - $_.LastActivity).TotalMinutes) } else { $null } } })
         Findings  = @($Report.Findings | ForEach-Object {
                 [pscustomobject]@{ Severity = $_.Severity; Category = $_.Category; Title = $_.Title; Count = $_.Count
                                    First = Format-Time $_.First; Last = Format-Time $_.Last; Detail = $_.Detail
                                    Explain = $_.Explain; Next = $_.Next; Sample = $_.Sample } })
         Dumps     = @($Report.Dumps | ForEach-Object {
-                [pscustomobject]@{ Kind = $_.Kind; Path = $_.Path; SizeMB = $_.SizeMB; Modified = Format-Time $_.Modified } })
+                [pscustomobject]@{ Kind = $_.Kind; Path = $_.Path; SizeMB = $_.SizeMB; Modified = Format-Time $_.Modified
+                                   StopCode = $_.Code; StopName = $_.CodeName } })
     } | ConvertTo-Json -Depth 6
     [System.IO.File]::WriteAllText("$base.json", (Protect $json), $utf8)
     return @("$base.html", "$base.json")

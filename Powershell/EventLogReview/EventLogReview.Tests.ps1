@@ -115,14 +115,45 @@ $none = Get-RestartIncidents @()
 Assert-Equal $none.Count 0 'no events, no incidents'
 
 $inc = Get-RestartIncidents @((New-E6008 $when 'junk' 'junk'))
-Assert-True ($null -eq $inc[0].WentDownAt) 'unparseable shutdown time is left out, not guessed'
+Assert-True ($null -eq $inc[0].LastActivity) 'last activity is filled in later from the log, never guessed from 6008'
 
-# --- shutdown time ------------------------------------------------------------
-$e = New-E6008 (Get-Date '2026-10-23 16:49:19') "7:37:05$([char]0x200E) AM" "$([char]0x200E)10/23/2026"
-$p = ConvertFrom-ShutdownTime $e
-Assert-Equal $p.ToString('yyyy-MM-dd HH:mm') '2026-10-23 07:37' '6008 time parsed through LTR marks and en-US date'
-$e = New-E6008 (Get-Date '2026-10-23 16:49:19') '7:37:05 AM' '10/23/2020'
-Assert-True ($null -eq (ConvertFrom-ShutdownTime $e)) 'a time years before the event is rejected'
+# --- silence before a restart ---------------------------------------------------
+Assert-Equal (Format-Duration ([timespan]::FromMinutes(2.6))) '3m' 'duration in minutes'
+Assert-Equal (Format-Duration ([timespan]::FromMinutes(95))) '1h 35m' 'duration in hours'
+Assert-Equal (Format-Duration ([timespan]::FromHours(8.7))) '8h 42m' 'duration with minutes'
+Assert-Equal (Format-Duration ([timespan]::FromHours(30))) '1d 6h' 'duration in days'
+
+# --- dump headers and graphics-hang findings ----------------------------------
+function New-DumpBytes {
+    param([string]$Signature = 'PAGEDU64', [uint32]$Code = 0x141, [uint64]$P1 = 4660, [int]$Length = 0x60)
+    $b = New-Object byte[] $Length
+    [Text.Encoding]::ASCII.GetBytes($Signature).CopyTo($b, 0)
+    if ($Length -ge 0x3C) { [BitConverter]::GetBytes($Code).CopyTo($b, 0x38) }
+    if ($Length -ge 0x48) { [BitConverter]::GetBytes($P1).CopyTo($b, 0x40) }
+    return , $b
+}
+$h = ConvertFrom-DumpHeader (New-DumpBytes)
+Assert-Equal $h.Code 321 'dump header stop code (0x141)'
+Assert-Equal $h.Parameter1 4660 'dump header first parameter'
+Assert-True ($null -eq (ConvertFrom-DumpHeader (New-DumpBytes 'PAGEDUMP'))) '32-bit dump signature is not decoded'
+Assert-True ($null -eq (ConvertFrom-DumpHeader (New-DumpBytes 'NOTADUMP'))) 'unknown signature is not decoded'
+Assert-True ($null -eq (ConvertFrom-DumpHeader ([byte[]](1, 2, 3)))) 'short input is not decoded'
+Assert-True ($null -eq (ConvertFrom-DumpHeader $null)) 'null input is not decoded'
+Assert-Equal (Get-BugcheckInfo 0x193).Name 'VIDEO_DXGKRNL_LIVEDUMP' 'live dump code 0x193'
+Assert-Equal (Get-BugcheckInfo 0x141).Class 'Video' 'live dump code 0x141 is video'
+
+function New-DumpEntry {
+    param([string]$Code, [string]$Name, [string]$Class, [datetime]$When = $t0)
+    [pscustomobject]@{ Kind = 'Live kernel'; Path = 'C:\x.dmp'; SizeMB = 0.3; Modified = $When; Code = $Code; CodeName = $Name; Class = $Class }
+}
+Assert-Equal @(ConvertTo-DumpFindings @()).Count 0 'no dumps, no dump finding'
+Assert-Equal @(ConvertTo-DumpFindings @((New-DumpEntry '0x1B0' '' ''))).Count 0 'an unrecognised live dump code is listed but not claimed as a graphics hang'
+$vf = ConvertTo-DumpFindings @((New-DumpEntry '0x141' 'VIDEO_ENGINE_TIMEOUT_DETECTED' 'Video' $t0), (New-DumpEntry '0x117' 'VIDEO_TDR_TIMEOUT_DETECTED' 'Video' $t0.AddMinutes(1)))
+Assert-Equal $vf[0].Severity 'Medium' 'two graphics dumps are medium'
+Assert-Equal $vf[0].Count 2 'graphics dumps are counted'
+$vf3 = ConvertTo-DumpFindings @(1..3 | ForEach-Object { New-DumpEntry '0x141' 'VIDEO_ENGINE_TIMEOUT_DETECTED' 'Video' $t0.AddMinutes($_) })
+Assert-Equal $vf3[0].Severity 'High' 'three graphics dumps escalate'
+Assert-True ($vf3[0].Detail -match 'VIDEO_ENGINE_TIMEOUT_DETECTED \(0x141\) x3') 'dump finding summarises by stop code'
 
 # --- incident findings --------------------------------------------------------
 $three = Get-RestartIncidents @(
@@ -170,6 +201,11 @@ $f = Get-Finding (Get-RuleFindings @($disk) $rules) 'disk-bad-block'
 Assert-Equal $f.Severity 'High' 'bad block is high'
 Assert-Equal $f.Detail '\Device\Harddisk1\DR1 x1' 'bad block names the device'
 Assert-Equal (Get-Finding (Get-RuleFindings @((New-Ev 'disk' 52 2)) $rules) 'disk-predicted-failure').Severity 'Critical' 'predicted failure is critical'
+
+$d154 = 1..3 | ForEach-Object { New-Ev 'disk' 154 2 'System' $t0.AddMinutes($_) }
+Assert-Equal (Get-Finding (Get-RuleFindings $d154 $rules) 'disk-hardware-error').Severity 'Medium' 'a few disk hardware errors are medium'
+$d154many = 1..25 | ForEach-Object { New-Ev 'disk' 154 2 'System' $t0.AddMinutes($_) }
+Assert-Equal (Get-Finding (Get-RuleFindings $d154many $rules) 'disk-hardware-error').Severity 'High' 'many disk hardware errors escalate'
 
 $ntfs = New-Ev 'Ntfs' 55 2
 Assert-True ($null -ne (Get-Finding (Get-RuleFindings @($ntfs) $rules) 'ntfs-corruption')) 'Ntfs provider matches'

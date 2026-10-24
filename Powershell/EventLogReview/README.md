@@ -44,8 +44,8 @@ It also notes whether it happened during sleep/resume, roughly when the PC went 
 
 | Area | Examples |
 | ---- | -------- |
-| Storage | disk bad blocks, controller errors, paging errors, predicted failure, retries, device resets, NTFS corruption, delayed write failures, chkdsk at boot, shadow copy failures |
-| Hardware | WHEA errors, CPU throttled by firmware, low memory, GPU driver resets, kernel watchdog reports |
+| Storage | disk bad blocks, controller errors, paging errors, hardware I/O errors, predicted failure, retries, device resets, NTFS corruption, delayed write failures, chkdsk at boot, shadow copy failures |
+| Hardware | WHEA errors, CPU throttled by firmware, low memory, GPU driver resets, kernel watchdog reports, graphics hangs read from live kernel dump headers (works even when Windows Error Reporting is off) |
 | Services / apps | service crashes and failures, application crashes (with faulting module), hangs, unhandled .NET exceptions |
 | Updates / security | Windows Update failures, Defender detections |
 | Other | any Error/Critical event with no rule, counted with a sample, so nothing is silently dropped |
