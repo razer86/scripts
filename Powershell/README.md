@@ -104,6 +104,16 @@ General Windows system administration and troubleshooting utilities.
 | `Test-PantherMonitorSize.ps1` | Detects oversized `C:\Windows\Panther\monitor` folder and remediates leftover `WinSetupMon` driver auto-start (designed for RMM/Intune detection) |
 | `Test-SMTPAuthentication.ps1` | Tests SMTP authentication against mail servers (supports STARTTLS, SSL) |
 
+### Event Log Review
+
+Reads a device's event log history and reports what went wrong, ranked, in plain language (blue screens, power loss, failing disks, crashing services/apps, hardware errors). Read-only; built to run as SYSTEM from ScreenConnect Backstage or the sc-console GitHub tab.
+
+See [`EventLogReview/README.md`](EventLogReview/README.md) for detailed documentation.
+
+| Script | Description |
+| ------ | ----------- |
+| `EventLogReview/Invoke-EventLogReview.ps1` | Reviews the last N days of System/Application events; correlates restarts and crashes, ranks findings with explanations and next steps; optional masked HTML + JSON report |
+
 ### Outlook Archive Automation
 
 Scripts for automatically routing Outlook inbox emails into folders based on sender domain or rc+ address mappings.
