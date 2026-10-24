@@ -300,6 +300,47 @@ Assert-True ($html -match 'Test &amp; Co') 'ampersand encoded'
 $text = Format-ReviewText $report 5
 Assert-True ($text -match 'VERDICT: 1 needing action') 'text report states the verdict'
 
+# Every section populated at once. A report with only findings never exercised the
+# Limits/Notes loops, and a loop variable named $l silently replaced the line list $L.
+$incidents = Get-RestartIncidents @((New-K41 $when), (New-E6008 $when), (New-K41 $when.AddDays(-1) ([uint32]0x116)))
+$incidents[0].LastActivity = $incidents[0].Time.AddHours(-3)
+$full = $report.PSObject.Copy()
+$full.Limits = @('Application log only goes back to 2026-10-23, so this review covers 1 day(s), not 7.')
+$full.Notes = @('Could not read something.')
+$full.Incidents = $incidents
+$full.Planned = @([pscustomobject]@{ Time = $t0; Action = 'restart'; Reason = 'Planned'; Process = 'TrustedInstaller'; User = 'NT AUTHORITY\SYSTEM' })
+$full.Hidden = @([pscustomobject]@{ Title = 'DCOM'; Count = 12 })
+$full.Dumps = @(1..7 | ForEach-Object { New-DumpEntry '0x141' 'VIDEO_ENGINE_TIMEOUT_DETECTED' 'Video' $t0.AddMinutes($_) })
+$errors = @()
+$fullText = Format-ReviewText $full 5 2>&1 | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $errors += $_ } else { $_ } }
+Assert-Equal $errors.Count 0 'text report with every section populated raises no errors'
+Assert-True ($fullText -match 'NOTE: Application log only goes back') 'limits are printed'
+Assert-True ($fullText -match 'NOTE: Could not read something') 'notes are printed'
+Assert-True ($fullText -match 'RESTARTS & CRASHES: 2 unexpected') 'incidents are printed after the notes'
+Assert-True ($fullText -match 'log silent 3h 0m|log silent 3h') 'silence before the restart is printed'
+Assert-True ($fullText -match 'FINDINGS \(top 1 of 1\)') 'findings are printed after the notes'
+Assert-True ($fullText -match 'Hidden as low value: 12 events') 'hidden count is printed'
+Assert-True ($fullText -match 'CRASH DUMPS in window: 7' -and $fullText -match 'and 2 more') 'dumps are printed and truncated'
+$errors = @()
+$fullHtml = ConvertTo-ReviewHtml $full 2>&1 | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $errors += $_ } else { $_ } }
+Assert-Equal $errors.Count 0 'HTML report with every section populated raises no errors'
+Assert-True (($fullHtml -join '') -match 'Log silent for') 'HTML shows the silence column'
+
+# --- variable names --------------------------------------------------------------
+# PowerShell variables are case-insensitive, so $L and $l are one variable. Catch it
+# statically: no function may use two spellings of the same name.
+$tokens = $null; $parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Invoke-EventLogReview.ps1'), [ref]$tokens, [ref]$parseErrors)
+$collisions = @()
+foreach ($fn in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+    $names = $fn.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+        ForEach-Object { $_.VariablePath.UserPath } | Where-Object { $_ -notmatch ':' }
+    foreach ($g in ($names | Group-Object { $_.ToLower() })) {
+        if (@($g.Group | Select-Object -Unique).Count -gt 1) { $collisions += '{0}: {1}' -f $fn.Name, (($g.Group | Select-Object -Unique) -join ' / ') }
+    }
+}
+Assert-Equal ($collisions -join '; ') '' 'no function uses two spellings of one variable'
+
 $rows = ConvertTo-FindingRows $report 5
 Assert-Equal @($rows).Count 1 'one table row per finding'
 Assert-Equal $rows[0].Verdict 'ACTION' 'table row verdict'

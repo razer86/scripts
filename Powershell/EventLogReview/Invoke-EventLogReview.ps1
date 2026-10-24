@@ -609,9 +609,9 @@ function Get-RestartIncidents {
 
     $incidents = @()
     foreach ($cluster in $clusters) {
-        $events = @($cluster)
-        $k41 = $events | Where-Object { $_.Provider -eq 'Microsoft-Windows-Kernel-Power' } | Select-Object -First 1
-        $ser = $events | Where-Object { $_.Provider -eq 'Microsoft-Windows-WER-SystemErrorReporting' } | Select-Object -First 1
+        $members = @($cluster)
+        $k41 = $members | Where-Object { $_.Provider -eq 'Microsoft-Windows-Kernel-Power' } | Select-Object -First 1
+        $ser = $members | Where-Object { $_.Provider -eq 'Microsoft-Windows-WER-SystemErrorReporting' } | Select-Object -First 1
 
         $code = [uint32]0
         $params = ''
@@ -658,7 +658,7 @@ function Get-RestartIncidents {
         }
 
         $incidents += [pscustomobject]@{
-            Time         = ($events | Sort-Object Time | Select-Object -First 1).Time
+            Time         = ($members | Sort-Object Time | Select-Object -First 1).Time
             Kind         = $kind
             Severity     = $sev
             Title        = $title
@@ -1074,8 +1074,9 @@ function Format-ReviewText {
     if ($c.LastBoot) { $bits += "last boot $($c.LastBoot) (up $($c.Uptime))" }
     if ($bits.Count) { & $add ($bits -join '; ') }
     & $add ('Read {0} events; {1} boot(s) in the window.' -f $Report.EventsRead, $Report.Boots)
-    foreach ($l in $Report.Limits) { & $add "NOTE: $l" }
-    foreach ($n in $Report.Notes) { & $add "NOTE: $n" }
+    # Not $l / $n: PowerShell variables are case-insensitive, and $L is the line list.
+    foreach ($limit in $Report.Limits) { & $add "NOTE: $limit" }
+    foreach ($note in $Report.Notes) { & $add "NOTE: $note" }
     & $add ''
     & $add ('VERDICT: ' + (Get-ReviewVerdictText $Report))
 
